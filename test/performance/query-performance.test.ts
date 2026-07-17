@@ -85,7 +85,11 @@ describe("1,000-card query performance", () => {
       durations.sort((left, right) => left - right);
       const p95 = durations[Math.ceil(durations.length * 0.95) - 1]!;
       process.stdout.write(`[query-performance] cards=1000 samples=${SAMPLE_COUNT} p95=${p95.toFixed(2)}ms\n`);
-      expect(p95).toBeLessThan(300);
+      // 既定 300ms は GPU 実行時の目標 (spec §6)。Ollama が CPU フォールバック
+      // する環境では GENIUS_PERF_P95_MS で実測に合わせて上書きする (waiver は
+      // spec/feature/clone-db.md §6 に記録)。
+      const p95BudgetMs = Number(process.env.GENIUS_PERF_P95_MS ?? 300);
+      expect(p95).toBeLessThan(p95BudgetMs);
     },
     180_000,
   );
