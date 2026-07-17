@@ -9,29 +9,57 @@
 
 ## 手順
 
+```text
+npm ci --include=dev
+npm run build
 ```
-npm ci
-cp genius.config.example.json genius.config.json   # ソースパスを実環境に合わせて記入
-npm run migrate                                     # data/genius.db 作成
-npm run dev                                         # port 4230
+
+PowerShell で local config を作成します。
+
+```powershell
+Copy-Item -LiteralPath genius.config.example.json -Destination genius.config.json
+```
+
+POSIX shell の場合:
+
+```sh
+cp genius.config.example.json genius.config.json
+```
+
+`genius.config.json` のソースパスを実環境に合わせて記入してから migration を実行します。
+
+```text
+npm run migrate
+npm test
+```
+
+サービス起動はセッションや worktree から行わず、Excubitor または人間がプロジェクト本体で
+`npm start` を実行します。開発時だけ `npm run dev` を利用します。起動後は config の port で
+`/healthz` を確認します (example は 4230)。
+
+```text
 curl http://127.0.0.1:4230/healthz
 ```
 
 ## Excubitor catalog
 
-サービス正本: code `genius`, name `Genius (自分クローン判断カードDB)`,
-role `backend`, port `4230`。catalog 登録は運用側 (Excubitor) で行う。
-起動はセッションから spawn しない (Excubitor / 人間)。
+登録候補は code `genius`, name `Genius (自分クローン判断カードDB)`, role `backend`,
+port `4230`。catalog 登録は運用側 (Excubitor) で行う。登録後は Excubitor catalog /
+ProcessMap を port と endpoint の正本とし、`genius.config.json` を一致させる。
 
 ## 初回投入 (Tier 1)
 
-```
-genius ingest --sources memory,session-logs,channel-archives,review,memoria
-genius stats
+```text
+node dist/cli.js ingest --sources memory,session-logs,channel-archives,review,memoria
+node dist/cli.js stats
 ```
 
 Tier 2 (生ログ 2.7GB) は夜間バッチで段階投入:
 
+```text
+node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2 --budget-files 500
 ```
-genius ingest --tier2 --budget-files 500   # 新しい順に 500 ファイル
-```
+
+引数なし ingest は Tier 1 のみ。`--tier2` を付けて `--sources` を省略すると Tier 1 と
+Tier 2 の両方が対象になる。日次運用、run status の確認、MCP/hook、backup、reembed は
+repository の `README.md` を参照する。

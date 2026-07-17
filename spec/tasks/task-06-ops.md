@@ -1,7 +1,7 @@
 # task-06 運用 (増分バッチ / stats / 評価ハーネス)
 
 kind: feature
-status: todo
+status: done
 
 ## 内容
 

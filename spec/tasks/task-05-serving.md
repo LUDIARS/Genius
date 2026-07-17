@@ -1,7 +1,7 @@
 # task-05 提供面 (API / CLI / MCP / フックスクリプト)
 
 kind: feature
-status: todo
+status: done (2026-07-17 — p95 は CPU フォールバック環境の waiver つき。spec/feature/clone-db.md §6 参照)
 
 ## 内容
 

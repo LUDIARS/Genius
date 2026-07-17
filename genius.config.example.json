@@ -1,7 +1,12 @@
 {
   "port": 4230,
   "dataDir": "./data",
-  "embedding": { "baseUrl": "http://127.0.0.1:11434", "model": "bge-m3", "dim": 1024 },
+  "embedding": {
+    "baseUrl": "http://127.0.0.1:11434",
+    "model": "bge-m3",
+    "dim": 1024,
+    "numGpu": null
+  },
   "distill": {
     "backend": "claude-cli",
     "model": "claude-haiku-4-5-20251001",

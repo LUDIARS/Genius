@@ -1,6 +1,8 @@
 node_modules/
 dist/
-data/
+/data/
+/logs/
+/eval/gold.jsonl
 *.db
 *.db-wal
 *.db-shm
