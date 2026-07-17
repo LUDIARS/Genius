@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+*.db
+*.db-wal
+*.db-shm
+genius.config.json
+.env
+*.log
