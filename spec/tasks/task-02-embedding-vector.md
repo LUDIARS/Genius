@@ -1,7 +1,7 @@
 # task-02 埋め込みクライアント + ベクトル索引層
 
 kind: feature
-status: todo
+status: done
 
 ## 内容
 

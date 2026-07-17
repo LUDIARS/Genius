@@ -1,0 +1,93 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  GeniusHttpClient,
+  GeniusHttpClientError,
+  normalizeLoopbackBaseUrl,
+  resolveGeniusBaseUrl,
+} from "../src/client/index.js";
+
+const CARD = {
+  id: "01J00000000000000000000000",
+  domain: "work" as const,
+  visibility: "public" as const,
+  situation: "A decision is needed",
+  judgment: "Choose the reversible option",
+  rationale: "It preserves information",
+  tags: ["design"],
+  sourceRef: "memory:fixture#decision",
+  sourceTier: 1 as const,
+  confidence: 0.9,
+  supersededBy: null,
+  createdAt: 1,
+  updatedAt: 1,
+  score: 0.87,
+};
+
+describe("GeniusHttpClient", () => {
+  it("queries the local API without following redirects", async () => {
+    const fetchImplementation = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ cards: [CARD], tookMs: 12 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const client = new GeniusHttpClient({
+      baseUrl: "http://127.0.0.1:4230/",
+      fetch: fetchImplementation as typeof fetch,
+    });
+
+    await expect(client.query({ text: " reversible ", domain: "work", k: 8 })).resolves.toEqual({
+      cards: [CARD],
+      tookMs: 12,
+    });
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+    const [url, init] = fetchImplementation.mock.calls[0] ?? [];
+    expect(String(url)).toBe("http://127.0.0.1:4230/api/clone/query");
+    expect(init?.redirect).toBe("error");
+    expect(JSON.parse(String(init?.body))).toEqual({ text: "reversible", domain: "work", k: 8 });
+  });
+
+  it("rejects non-loopback and non-http base URLs", () => {
+    expect(() => normalizeLoopbackBaseUrl("https://127.0.0.1:4230")).toThrow(/must use http/i);
+    expect(() => normalizeLoopbackBaseUrl("http://example.com:4230")).toThrow(/loopback/i);
+  });
+
+  it("surfaces status without copying a non-success response body", async () => {
+    const client = new GeniusHttpClient({
+      baseUrl: "http://localhost:4230",
+      fetch: vi.fn(async () => new Response("database unavailable", { status: 503 })) as typeof fetch,
+    });
+
+    const error = await client.query({ text: "query" }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(GeniusHttpClientError);
+    expect(error).toMatchObject({ status: 503 });
+    expect((error as Error).message).toBe("Genius query failed with HTTP 503");
+    expect((error as Error).message).not.toContain("database unavailable");
+  });
+
+  it("rejects malformed success responses", async () => {
+    const client = new GeniusHttpClient({
+      baseUrl: "http://127.0.0.1:4230",
+      fetch: vi.fn(async () => new Response(JSON.stringify({ cards: "wrong", tookMs: 1 }))) as typeof fetch,
+    });
+
+    await expect(client.query({ text: "query" })).rejects.toThrow(/invalid response/i);
+  });
+});
+
+describe("Genius client URL configuration", () => {
+  it("uses an explicit loopback URL or the configured port", () => {
+    expect(resolveGeniusBaseUrl({ GENIUS_BASE_URL: "http://localhost:5000/" })).toBe(
+      "http://localhost:5000",
+    );
+    expect(resolveGeniusBaseUrl({ GENIUS_PORT: "5001" })).toBe("http://127.0.0.1:5001");
+    expect(resolveGeniusBaseUrl({}, 4321)).toBe("http://127.0.0.1:4321");
+    expect(() => resolveGeniusBaseUrl({})).toThrow(/config/i);
+  });
+
+  it("fails on an invalid port rather than falling back", () => {
+    expect(() => resolveGeniusBaseUrl({ GENIUS_PORT: "0" })).toThrow(/between 1 and 65535/);
+    expect(() => resolveGeniusBaseUrl({ GENIUS_PORT: "not-a-port" })).toThrow(/integer/);
+  });
+});

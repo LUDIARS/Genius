@@ -1,0 +1,3 @@
+{"type":"system","message":{"role":"system","content":"Follow the repository rules."}}
+{"type":"user","message":{"role":"user","content":"How should missing input be handled?"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Fail explicitly and preserve the source."}]}}

@@ -1,7 +1,7 @@
 # task-04 蒸留ワーカー
 
 kind: feature
-status: todo
+status: done
 
 ## 内容
 

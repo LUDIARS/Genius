@@ -1,7 +1,7 @@
 # task-01 スキャフォールド + スキーマ + 設定 loader
 
 kind: feature
-status: todo
+status: done
 
 ## 内容
 

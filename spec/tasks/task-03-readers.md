@@ -1,7 +1,7 @@
 # task-03 収集リーダ群 (Tier 1 + Tier 2)
 
 kind: feature
-status: todo
+status: done
 
 ## 内容
 

@@ -1,0 +1,39 @@
+{
+  "name": "@ludiars/genius",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local judgment-card database and retrieval service",
+  "type": "module",
+  "bin": {
+    "genius": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/server.ts",
+    "eval": "tsx src/eval/cli.ts",
+    "mcp": "tsx src/mcp/server.ts",
+    "migrate": "tsx src/db/migrate-cli.ts",
+    "start": "node dist/server.js",
+    "test": "vitest run --reporter=verbose",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.0.10",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "better-sqlite3": "12.11.1",
+    "hono": "4.12.30",
+    "sqlite-vec": "0.1.9",
+    "ulid": "3.0.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "26.1.1",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
