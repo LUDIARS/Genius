@@ -253,7 +253,31 @@ node dist/cli.js ingest
 Timer Delegation には上記 command、Genius repository の working directory、失敗時の通知を
 設定します。CLI 成功は非同期 run の受付成功を表すため、返された run id を
 `GET /api/clone/ingest/runs/:id` で polling し、`completed` を完了条件にしてください。
-Tier 2 は日次 Tier 1 と分け、明示 budget 付きの夜間 job にします。
+
+### Tier 2 夜間バッチ (Memoria #550)
+
+Tier 2 は日次 Tier 1 と分け、明示 budget 付きの夜間 job にします。`--sources` を
+省略したまま `--tier2` を付けると Tier 1 と Tier 2 の両方が対象になってしまうため、
+夜間 job では Tier 2 ソースのみを明示します。
+
+```text
+npm run ingest:tier2-nightly
+```
+
+このスクリプトは `node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2
+--budget-files 500` を固定でラップしたものです (`test/cli.test.ts` に、この厳密な引数列が
+CLI パーサと ingest サービスの契約どおりに解決されることを保証する回帰テストがあります)。
+budget を変える場合は `node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2
+--budget-files <N>` を直接呼び出してください。
+
+Timer Delegation の実際のスケジュール登録 (cron 式・delegation template の追加) は
+Concordia 自身のコード (`src/delegation/seed.ts` の template 定義と
+`src/scheduler/cron-jobs.ts` の `CRON_JOBS` 配列) を編集して行う、Concordia 側の実装です。
+Concordia には他リポが自己登録できる設定ファイルや API は無く、既存の 2 件
+(`ludiars-review-daily`、`daily-review-reconciliation`) もすべて Concordia 内の
+固定リストとして追加されています。Genius リポジトリはこの `npm run
+ingest:tier2-nightly` を Timer Delegation の呼び出し先として提供するところまでが
+スコープで、Concordia 側への template・cron 追加はこの repository の実装スコープ外です。
 
 Timer 登録そのものと Excubitor 起動設定はこの repository の実装スコープ外です。
 
