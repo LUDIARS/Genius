@@ -65,7 +65,11 @@ export interface PublicExportCard {
 
 export interface ApiServices {
   health: { get(): Promise<HealthStatus> };
-  query: { query(input: QueryInput): Promise<QueryResult> };
+  query: {
+    query(input: QueryInput): Promise<QueryResult>;
+    /** Batches embedding for several queries into a single round trip. */
+    queryMany(inputs: readonly QueryInput[]): Promise<QueryResult[]>;
+  };
   cards: {
     list(input: ListCardsInput): Promise<CloneCard[]>;
     get(id: string): Promise<CloneCard | null>;

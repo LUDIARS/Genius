@@ -66,6 +66,49 @@ describe("GeniusHttpClient", () => {
     expect((error as Error).message).not.toContain("database unavailable");
   });
 
+  it("batches several queries through /api/clone/query-batch in one request", async () => {
+    const fetchImplementation = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({ results: [{ cards: [CARD], tookMs: 3 }, { cards: [], tookMs: 4 }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    const client = new GeniusHttpClient({
+      baseUrl: "http://127.0.0.1:4230",
+      fetch: fetchImplementation as typeof fetch,
+    });
+
+    const results = await client.queryMany([
+      { text: "reversible", k: 8 },
+      { text: "irreversible", k: 8 },
+    ]);
+
+    expect(results).toEqual([{ cards: [CARD], tookMs: 3 }, { cards: [], tookMs: 4 }]);
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+    const [url, init] = fetchImplementation.mock.calls[0] ?? [];
+    expect(String(url)).toBe("http://127.0.0.1:4230/api/clone/query-batch");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      queries: [
+        { text: "reversible", k: 8 },
+        { text: "irreversible", k: 8 },
+      ],
+    });
+  });
+
+  it("rejects a batch response whose result count does not match the request", async () => {
+    const client = new GeniusHttpClient({
+      baseUrl: "http://127.0.0.1:4230",
+      fetch: vi.fn(
+        async () => new Response(JSON.stringify({ results: [{ cards: [], tookMs: 1 }] })),
+      ) as typeof fetch,
+    });
+
+    await expect(
+      client.queryMany([{ text: "a" }, { text: "b" }]),
+    ).rejects.toThrow(/returned 1 results for 2 inputs/);
+  });
+
   it("rejects malformed success responses", async () => {
     const client = new GeniusHttpClient({
       baseUrl: "http://127.0.0.1:4230",

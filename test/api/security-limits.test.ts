@@ -10,7 +10,10 @@ import {
 
 const services: ApiServices = {
   health: { async get() { return { ok: true, model: "test", cards: 0, ollama: true }; } },
-  query: { async query() { return { cards: [], tookMs: 0 }; } },
+  query: {
+    async query() { return { cards: [], tookMs: 0 }; },
+    async queryMany(inputs) { return inputs.map(() => ({ cards: [], tookMs: 0 })); },
+  },
   cards: {
     async list() { return []; },
     async get() { return null; },

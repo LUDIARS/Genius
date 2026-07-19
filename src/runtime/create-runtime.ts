@@ -63,6 +63,7 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       model: activeModel.model,
       dimension: activeModel.dimension,
       ...(config.embedding.numGpu === null ? {} : { numGpu: config.embedding.numGpu }),
+      ...(config.embedding.keepAlive === null ? {} : { keepAlive: config.embedding.keepAlive }),
     });
     const embedder = new CachedEmbeddingClient(rawEmbedder, new EmbeddingCache(database));
     if (options.checkReadiness ?? true) await embedder.assertReady();

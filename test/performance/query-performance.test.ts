@@ -93,4 +93,51 @@ describe("1,000-card query performance", () => {
     },
     180_000,
   );
+
+  integrationIt(
+    "embeds a batch of queries faster per-query than embedding them one at a time",
+    async () => {
+      const embedder = new OllamaEmbeddingClient({
+        baseUrl: "http://127.0.0.1:11434",
+        model: "bge-m3",
+        dimension: 1024,
+        numGpu: 0,
+        timeoutMs: 120_000,
+      });
+      await embedder.assertReady();
+      const service = new QueryService({
+        embedder,
+        vectors: new SqliteQueryVectorPort(database, 1024),
+      });
+      await service.query({ text: "warm up local judgment retrieval", k: 8 });
+
+      const BATCH_SIZE = 8;
+      const inputs = Array.from({ length: BATCH_SIZE }, (_unused, index) => ({
+        text: `sequential-vs-batched query embedding sample ${index}`,
+        domain: "work" as const,
+        k: 8,
+      }));
+
+      const sequentialStarted = performance.now();
+      for (const input of inputs) await service.query(input);
+      const sequentialMs = performance.now() - sequentialStarted;
+
+      const batchedStarted = performance.now();
+      const batched = await service.queryMany(inputs);
+      const batchedMs = performance.now() - batchedStarted;
+
+      process.stdout.write(
+        `[query-batching] batchSize=${BATCH_SIZE} ` +
+          `sequential=${sequentialMs.toFixed(1)}ms (${(sequentialMs / BATCH_SIZE).toFixed(1)}ms/query) ` +
+          `batched=${batchedMs.toFixed(1)}ms (${(batchedMs / BATCH_SIZE).toFixed(1)}ms/query)\n`,
+      );
+      expect(batched).toHaveLength(BATCH_SIZE);
+      // Batching amortizes one CPU bge-m3 round trip across the whole batch
+      // instead of paying it once per query (measured ~4x on this host; see
+      // spec/feature/clone-db.md Section 6). Assert a conservative 30%
+      // per-query improvement to stay stable under CI/host noise.
+      expect(batchedMs).toBeLessThan(sequentialMs * 0.7);
+    },
+    180_000,
+  );
 });

@@ -17,10 +17,18 @@ export async function evaluateRecallAtK(
   if (!Number.isSafeInteger(k) || k < 1) throw new Error("Recall k must be a positive integer");
   if (records.length === 0) throw new Error("Recall evaluation requires at least one gold record");
 
+  // Batches every gold query's embedding into a single round trip instead of
+  // one per record (see QueryService.queryMany / spec/feature/clone-db.md
+  // Section 6 for the measured ~4x per-query latency gain).
+  const results = await queryService.queryMany(records.map((record) => ({ text: record.query, k })));
+  if (results.length !== records.length) {
+    throw new Error(`Batched query returned ${results.length} results for ${records.length} records`);
+  }
+
   let hits = 0;
   let expected = 0;
-  for (const record of records) {
-    const result = await queryService.query({ text: record.query, k });
+  for (const [index, record] of records.entries()) {
+    const result = results[index]!;
     const retrieved = new Set(result.cards.map((card) => card.sourceRef));
     expected += record.expectedSourceRefs.length;
     for (const sourceRef of record.expectedSourceRefs) {

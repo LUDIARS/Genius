@@ -27,6 +27,7 @@ const configSchema = z
         model: z.string().trim().min(1),
         dim: z.literal(1024),
         numGpu: z.number().int().min(0).nullable().optional().default(null),
+        keepAlive: z.string().trim().min(1).nullable().optional().default(null),
       })
       .strict(),
     distill: z
@@ -48,6 +49,7 @@ export const CONFIG_ENVIRONMENT_VARIABLES = {
   embeddingModel: "GENIUS_EMBEDDING_MODEL",
   embeddingDim: "GENIUS_EMBEDDING_DIM",
   embeddingNumGpu: "GENIUS_EMBEDDING_NUM_GPU",
+  embeddingKeepAlive: "GENIUS_EMBEDDING_KEEP_ALIVE",
   distillBackend: "GENIUS_DISTILL_BACKEND",
   distillModel: "GENIUS_DISTILL_MODEL",
   sensitiveCheckModel: "GENIUS_DISTILL_SENSITIVE_CHECK_MODEL",
@@ -140,6 +142,11 @@ function applyEnvironmentOverrides(
   if (embeddingNumGpu !== undefined) {
     embedding.numGpu = strictInteger(embeddingNumGpu, CONFIG_ENVIRONMENT_VARIABLES.embeddingNumGpu);
   }
+  const embeddingKeepAlive = environmentValue(
+    environment,
+    CONFIG_ENVIRONMENT_VARIABLES.embeddingKeepAlive,
+  );
+  if (embeddingKeepAlive !== undefined) embedding.keepAlive = embeddingKeepAlive;
 
   const distillBackend = environmentValue(
     environment,

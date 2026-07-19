@@ -25,11 +25,13 @@ class SyntheticEmbedder implements EmbeddingClient {
   readonly model = "synthetic-local";
   readonly dimension = DIMENSION;
   calls = 0;
+  invocations = 0;
 
   async assertReady(): Promise<void> {}
 
   async embed(texts: readonly string[]): Promise<number[][]> {
     this.calls += texts.length;
+    this.invocations += 1;
     return texts.map((text) => vectorFor(text));
   }
 }
@@ -136,6 +138,54 @@ describe("clone API", () => {
     expect(body.cards[0]?.id).toBe(alpha.id);
     expect(body.cards.some((card) => card.id === old.id)).toBe(false);
     expect(body.tookMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("batches several queries into a single embedding round trip", async () => {
+    const alpha = await createCard("work", "public", "alpha", "fixture:alpha");
+    const beta = await createCard("hobby", "public", "beta", "fixture:beta");
+    const app = createApp(services);
+    const invocationsBefore = embedder.invocations;
+
+    const response = await app.request("/api/clone/query-batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        queries: [
+          { text: "alpha", domain: "work", k: 1 },
+          { text: "beta", domain: "hobby", k: 1 },
+        ],
+      }),
+    });
+    const body = (await response.json()) as {
+      results: Array<{ cards: Array<{ id: string }>; tookMs: number }>;
+    };
+
+    expect(response.status).toBe(200);
+    // One Ollama round trip for both queries, not two.
+    expect(embedder.invocations).toBe(invocationsBefore + 1);
+    expect(body.results).toHaveLength(2);
+    expect(body.results[0]?.cards[0]?.id).toBe(alpha.id);
+    expect(body.results[1]?.cards[0]?.id).toBe(beta.id);
+  });
+
+  it("rejects an empty or oversized query-batch request", async () => {
+    const app = createApp(services);
+
+    const empty = await app.request("/api/clone/query-batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ queries: [] }),
+    });
+    expect(empty.status).toBe(400);
+
+    const tooMany = await app.request("/api/clone/query-batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        queries: Array.from({ length: 51 }, () => ({ text: "alpha" })),
+      }),
+    });
+    expect(tooMany.status).toBe(400);
   });
 
   it("supports card create, list, get, and patch without exposing DELETE", async () => {

@@ -26,6 +26,15 @@ export interface OllamaEmbeddingClientOptions {
   timeoutMs?: number;
   /** Explicit Ollama GPU layer count. Omit to use the daemon's configured default. */
   numGpu?: number;
+  /**
+   * How long Ollama keeps this model resident after the request (Ollama
+   * `keep_alive`, e.g. "30m" or "-1" for indefinitely). Omit to use the
+   * daemon default (5 minutes). On hosts where GPU auto-detection is broken
+   * (see spec/feature/clone-db.md Section 6), letting the model unload
+   * between sparse requests forces a slow reload attempt on the next query;
+   * setting an explicit keep-alive avoids that reload tax in production.
+   */
+  keepAlive?: string;
 }
 
 function withoutLatestTag(model: string): string {
@@ -45,6 +54,7 @@ export class OllamaEmbeddingClient implements EmbeddingClient {
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
   readonly #numGpu: number | undefined;
+  readonly #keepAlive: string | undefined;
   public readonly model: string;
   public readonly dimension: number;
 
@@ -68,6 +78,10 @@ export class OllamaEmbeddingClient implements EmbeddingClient {
       throw new EmbeddingError("Ollama numGpu must be a non-negative integer");
     }
     this.#numGpu = options.numGpu;
+    if (options.keepAlive !== undefined && options.keepAlive.trim() === "") {
+      throw new EmbeddingError("Ollama keepAlive must not be empty");
+    }
+    this.#keepAlive = options.keepAlive;
   }
 
   async #request(path: string, init: RequestInit): Promise<Response> {
@@ -134,6 +148,7 @@ export class OllamaEmbeddingClient implements EmbeddingClient {
         model: this.model,
         input: texts,
         ...(this.#numGpu === undefined ? {} : { options: { num_gpu: this.#numGpu } }),
+        ...(this.#keepAlive === undefined ? {} : { keep_alive: this.#keepAlive }),
       }),
     });
     if (typeof response.model === "string" && !modelsMatch(response.model, this.model)) {

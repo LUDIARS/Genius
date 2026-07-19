@@ -6,6 +6,7 @@
 |---|---|---|
 | GET | `/healthz` | `{ok, model, cards, ollama}` (Ollama 死活も返す) |
 | POST | `/api/clone/query` | `{text, domain?, visibility?, k?=8}` → `{cards:[{...card, score}], tookMs}` |
+| POST | `/api/clone/query-batch` | `{queries: [{text, domain?, visibility?, k?=8}, ...]}` → `{results: [{cards, tookMs}, ...]}` (1〜N クエリを 1 回の embed 呼び出しに集約。p95 改善策、上限50件) |
 | GET | `/api/clone/cards` | 一覧。`?domain=&visibility=&tag=&q=&limit=&offset=` (q は LIKE) |
 | GET | `/api/clone/cards/:id` | 単体 |
 | POST | `/api/clone/cards` | 手動カード追加 (public は保存直前に共通センシティブ検査) |
@@ -46,7 +47,9 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
     "baseUrl": "http://127.0.0.1:11434",
     "model": "bge-m3",
     "dim": 1024,
-    "numGpu": null // null = Ollama 既定。0 = 明示的 CPU 実行
+    "numGpu": null, // null = Ollama 既定。0 = 明示的 CPU 実行
+    "keepAlive": null // 例 "30m"。null = Ollama 既定 (5分)。broken GPU 環境で
+                       // モデルがアンロードされるたびの再ロード遅延を避けたい時に設定
   },
   "distill": {
     "backend": "claude-cli",            // "claude-cli" | "ollama"
@@ -71,3 +74,7 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
 - 個人絶対パスをソースコードへハードコードしない (HARNESS 地雷ルール)。
 - `GENIUS_EMBEDDING_NUM_GPU` で `numGpu` を明示 override できる。自動 CPU
   フォールバックは行わない。
+- `GENIUS_EMBEDDING_KEEP_ALIVE` で `keepAlive` を明示 override できる
+  (Ollama `keep_alive`)。GPU 自動検出が壊れたホストでモデルがアンロード
+  された後の再ロードが GPU 経路をまず試みて数秒〜十数秒詰まる事例を確認済み
+  (spec/feature/clone-db.md セクション 6)。運用ではモデル常駐を保つ値を推奨。
