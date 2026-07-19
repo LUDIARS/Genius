@@ -97,7 +97,11 @@ Tier 2 は夜間バッチで段階投入 / 真の FT は見送り (カードは�
 - MCP server (stdio): tool `genius_query` — Claude Code / Codex から直接引ける。
 - ハーネスフック用スクリプト `hooks/genius-supply.mjs`: stdin にプロンプト
   文字列を受け、top-k カードを `[genius-supply]` ブロックで stdout に出す
-  (Ars 側 .claude hooks への配線は運用側で行う。本リポはスクリプト提供まで)。
+  (fail-closed。手動/テスト用契約)。Claude Code UserPromptSubmit が渡す JSON
+  payload (`{prompt,cwd,...}`) をそのまま解釈できないため、配線用アダプタ
+  `hooks/genius-harness-supply.mjs` を別途提供する (`GENIUS_HARNESS_HOOKS=1`
+  opt-in・タイムアウト付き・あらゆる失敗を fail-open)。Ars 側 `.claude` hooks
+  への実際の配線は運用側で行う。本リポはスクリプト提供まで。
 
 ## 7. エラー方針・観測可能性
 
