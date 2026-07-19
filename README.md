@@ -196,14 +196,49 @@ stdio MCP server は public 専用 tool `genius_query` を提供します。Geni
 `hooks/genius-supply.mjs` は UTF-8 prompt を stdin で受け、カード配列を
 `[genius-supply]` ブロックとして stdout に返します。config loader の compiled module を
 利用するため、先に `npm run build` が必要です。検索は public 固定で、内部メタデータは
-stdout へ出しません。
+stdout へ出しません。手動確認・テスト用の契約は厳格 (fail-closed) です。
 
 ```powershell
 '実装方針をどう決めるべきか' | node hooks/genius-supply.mjs
 ```
 
-Ars 側 hook への配線は運用スコープです。失敗時は stdout に空ブロックを返さず、stderr と
-非 0 exit で明示的に失敗します。
+失敗時は stdout に空ブロックを返さず、stderr と非 0 exit で明示的に失敗します。
+
+### Claude Code UserPromptSubmit への配線
+
+`hooks/genius-supply.mjs` を UserPromptSubmit hook に直接指定しないでください。
+Claude Code は raw prompt 文字列ではなく JSON payload (`{ prompt, cwd, session_id,
+... }`) を stdin へ渡すため、そのまま配線すると payload 全体が query 文字列に
+なってしまいます。加えて、fail-closed 契約はセッション全体のプロンプト送信を
+Genius 未起動時にブロックしてしまうため、常時起動していない補助サービスとして
+不適切です。
+
+`hooks/genius-harness-supply.mjs` はこの2点を解消する配線用アダプタです。
+JSON payload から `prompt` を取り出し、`GENIUS_HARNESS_HOOKS=1` の opt-in のときだけ
+動作し、タイムアウト (既定 2000ms、`GENIUS_HARNESS_TIMEOUT_MS` で変更可) を含む
+あらゆる失敗を fail-open (無音の exit 0) として扱います。Genius が未起動・低速でも
+プロンプト送信を妨げません。カード取得・整形ロジックは `genius-supply.mjs` と共有します。
+
+| 環境変数 | 用途 |
+|---|---|
+| `GENIUS_HARNESS_HOOKS` | `1` で有効化。未設定/他の値は no-op (既定 disabled) |
+| `GENIUS_HARNESS_TIMEOUT_MS` | クエリのタイムアウト予算 (既定 2000) |
+| `GENIUS_HARNESS_DEBUG` | `1` で診断ログを stderr へ (カード内容は出力しない) |
+
+`E:/Document/Ars/.claude/settings.json` の `UserPromptSubmit` へ実際に配線するのは
+Ars 側の運用作業です (この repository はスクリプト提供まで)。配線する場合は
+他の supply hook (`anatomia-supply.mjs` 等) と同様に、次の形の entry を追加します。
+
+```json
+{
+  "type": "command",
+  "command": "node Genius/hooks/genius-harness-supply.mjs",
+  "timeout": 3
+}
+```
+
+有効化するホスト環境では `GENIUS_HARNESS_HOOKS=1` を settings.json の `env` に
+設定してください。
 
 ## 日次運用と Concordia Timer Delegation
 
