@@ -39,6 +39,22 @@ describe("Tier 1 Markdown readers", () => {
     expect(unchanged.documents).toEqual([]);
   });
 
+  it("parses one-level nested frontmatter objects (memory's metadata.type block)", async () => {
+    const directory = await makeTemporaryDirectory();
+    await writeFile(
+      join(directory, "nested.md"),
+      "---\nname: prefer-explicit-failure\ndescription: fail fast on missing sources\nmetadata:\n  type: feedback\n---\n# Prefer explicit failure\n\nBody text.\n",
+      "utf8",
+    );
+    const reader = new MemoryReader(directory);
+    const batch = await reader.listDocuments(null);
+    const document = await reader.readDocument(requiredDescriptor(batch.documents[0]));
+    const frontmatter = document.metadata.frontmatter as Record<string, unknown>;
+
+    expect(frontmatter.name).toBe("prefer-explicit-failure");
+    expect(frontmatter.metadata).toEqual({ type: "feedback" });
+  });
+
   it("parses session-log headings without treating fenced Markdown as sections", async () => {
     const reader = new SessionLogReader(fixtureDirectory("session-logs"));
     const batch = await reader.listDocuments(null);
