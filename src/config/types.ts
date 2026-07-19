@@ -39,6 +39,8 @@ export interface EmbeddingConfig {
   model: string;
   dim: 1024;
   numGpu: number | null;
+  /** Ollama `keep_alive` (e.g. "30m", "-1"). Null uses the daemon default. */
+  keepAlive: string | null;
 }
 
 export interface DistillConfig {

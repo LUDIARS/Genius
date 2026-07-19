@@ -163,6 +163,7 @@ GET /api/clone/ingest/runs/<run-id>
 |---|---|---|
 | GET | `/healthz` | DB カード数と Ollama/model の readiness |
 | POST | `/api/clone/query` | ローカル embedding と sqlite-vec でカード検索 |
+| POST | `/api/clone/query-batch` | 複数クエリの embedding を 1 回の Ollama 往復に集約 (上限 50 件、p95 改善策) |
 | GET | `/api/clone/cards` | `domain`、`visibility`、`tag`、`q`、pagination 付き一覧 |
 | GET | `/api/clone/cards/:id` | カード取得 |
 | POST | `/api/clone/cards` | 手動カード追加 |
@@ -314,6 +315,7 @@ sqlite3 data/genius.db ".backup 'data/backups/genius-snapshot.db'"
 | `/healthz` が 503 / Ollama unavailable | Ollama の稼働、`ollama list`、embedding model 名を確認する |
 | model not pulled | `ollama pull <model>` 後に再実行する。別 backend へ自動切替しない |
 | Ollama GPU runner が明示エラーになる | GPU runtime を修復するか、意図して CPU 実行する場合だけ config の `embedding.numGpu` または `GENIUS_EMBEDDING_NUM_GPU=0` を設定する |
+| 疎なリクエスト後に最初のクエリだけ極端に遅い/詰まる | GPU runtime が壊れたホストでは unload 後の再ロードが GPU 経路を試みて失敗し得る。`embedding.keepAlive` または `GENIUS_EMBEDDING_KEEP_ALIVE` (例 `"30m"`) でモデル常駐を維持する |
 | source is not configured | config の該当 source を設定する。意図した欠損だけ `--allow-missing` を使う |
 | Tier 2 budget error | `--tier2 --budget-files N` を組にして指定する |
 | Claude CLI 起動・認証エラー | `claude` が PATH 上にあり、対話不要で認証済みか確認する |

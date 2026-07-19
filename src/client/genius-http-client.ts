@@ -1,6 +1,7 @@
 import { normalizeLoopbackBaseUrl, resolveGeniusBaseUrl, type Environment } from "./base-url.js";
 import { loadConfig, type LoadConfigOptions } from "../config/load-config.js";
 import {
+  geniusQueryBatchResultSchema,
   geniusQueryInputSchema,
   geniusQueryResultSchema,
   type GeniusQueryInput,
@@ -25,57 +26,86 @@ export class GeniusHttpClientError extends Error {
 
 export class GeniusHttpClient implements GeniusQueryService {
   readonly #queryUrl: URL;
+  readonly #queryBatchUrl: URL;
   readonly #fetch: typeof globalThis.fetch;
 
   constructor(options: GeniusHttpClientOptions) {
     const baseUrl = normalizeLoopbackBaseUrl(options.baseUrl);
     this.#queryUrl = new URL("/api/clone/query", baseUrl);
+    this.#queryBatchUrl = new URL("/api/clone/query-batch", baseUrl);
     this.#fetch = options.fetch ?? globalThis.fetch;
   }
 
   async query(input: GeniusQueryInput): Promise<GeniusQueryResult> {
     const validatedInput = geniusQueryInputSchema.parse(input);
+    const response = await this.#post(this.#queryUrl, validatedInput);
+    const body = await this.#readJson(response, "Genius query");
 
-    let response: Response;
+    const parsed = geniusQueryResultSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new GeniusHttpClientError(
+        `Genius query returned an invalid response: ${formatIssues(parsed.error.issues)}`,
+      );
+    }
+    return parsed.data;
+  }
+
+  /** Embeds every input's query in a single Ollama round trip via /api/clone/query-batch. */
+  async queryMany(inputs: readonly GeniusQueryInput[]): Promise<GeniusQueryResult[]> {
+    if (inputs.length === 0) return [];
+    const validatedInputs = inputs.map((input) => geniusQueryInputSchema.parse(input));
+    const response = await this.#post(this.#queryBatchUrl, { queries: validatedInputs });
+    const body = await this.#readJson(response, "Genius batch query");
+
+    const parsed = geniusQueryBatchResultSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new GeniusHttpClientError(
+        `Genius batch query returned an invalid response: ${formatIssues(parsed.error.issues)}`,
+      );
+    }
+    if (parsed.data.results.length !== inputs.length) {
+      throw new GeniusHttpClientError(
+        `Genius batch query returned ${parsed.data.results.length} results for ${inputs.length} inputs`,
+      );
+    }
+    return parsed.data.results;
+  }
+
+  async #post(url: URL, body: unknown): Promise<Response> {
     try {
-      response = await this.#fetch(this.#queryUrl, {
+      return await this.#fetch(url, {
         method: "POST",
         headers: {
           accept: "application/json",
           "content-type": "application/json",
         },
-        body: JSON.stringify(validatedInput),
+        body: JSON.stringify(body),
         redirect: "error",
       });
     } catch (error) {
-      throw new GeniusHttpClientError("Genius query request failed", { cause: error });
+      throw new GeniusHttpClientError(`Genius request failed: ${url.pathname}`, { cause: error });
     }
+  }
 
+  async #readJson(response: Response, label: string): Promise<unknown> {
     if (!response.ok) {
-      throw new GeniusHttpClientError(
-        `Genius query failed with HTTP ${response.status}`,
-        { status: response.status },
-      );
+      throw new GeniusHttpClientError(`${label} failed with HTTP ${response.status}`, {
+        status: response.status,
+      });
     }
     const body = await response.text();
-
-    let decoded: unknown;
     try {
-      decoded = JSON.parse(body) as unknown;
+      return JSON.parse(body) as unknown;
     } catch (error) {
-      throw new GeniusHttpClientError("Genius query returned invalid JSON", { cause: error });
+      throw new GeniusHttpClientError(`${label} returned invalid JSON`, { cause: error });
     }
-
-    const parsed = geniusQueryResultSchema.safeParse(decoded);
-    if (!parsed.success) {
-      throw new GeniusHttpClientError(
-        `Genius query returned an invalid response: ${parsed.error.issues
-          .map((issue) => `${issue.path.join(".") || "response"}: ${issue.message}`)
-          .join("; ")}`,
-      );
-    }
-    return parsed.data;
   }
+}
+
+function formatIssues(issues: readonly { path: PropertyKey[]; message: string }[]): string {
+  return issues
+    .map((issue) => `${issue.path.join(".") || "response"}: ${issue.message}`)
+    .join("; ");
 }
 
 export function createGeniusHttpClientFromEnvironment(

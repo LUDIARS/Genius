@@ -167,6 +167,7 @@ async function runReembed(
       dimension: config.embedding.dim,
       fetch: fetchImplementation,
       ...(config.embedding.numGpu === null ? {} : { numGpu: config.embedding.numGpu }),
+      ...(config.embedding.keepAlive === null ? {} : { keepAlive: config.embedding.keepAlive }),
     });
     const result = await new ReembedService(
       database,

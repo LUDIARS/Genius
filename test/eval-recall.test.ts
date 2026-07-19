@@ -64,18 +64,21 @@ describe("gold JSONL", () => {
   it("reports malformed lines with their line number", async () => {
     const directory = await makeTemporaryDirectory();
     const path = join(directory, "gold.jsonl");
-    await writeFile(path, '{"query":"ok","expectedSourceRefs":["ref"]}\nnot-json\n', "utf8");
+    const malformedLines = ['{"query":"ok","expectedSourceRefs":["ref"]}', "not-json", ""];
+    await writeFile(path, malformedLines.join("\n"), "utf8");
 
     await expect(loadGoldRecords(path)).rejects.toThrow(/line 2: invalid JSON/);
   });
 });
 
 describe("recall@8", () => {
-  it("computes micro recall across expected source references", async () => {
-    const query = vi.fn(async ({ text }: { text: string }) =>
-      text === "first" ? resultForSourceRefs(["a"]) : resultForSourceRefs(["b", "noise"]),
+  it("computes micro recall across expected source references using a single batched embed call", async () => {
+    const queryMany = vi.fn(async (inputs: { text: string }[]) =>
+      inputs.map((input) =>
+        input.text === "first" ? resultForSourceRefs(["a"]) : resultForSourceRefs(["b", "noise"]),
+      ),
     );
-    const queryService = { query } as GeniusQueryService;
+    const queryService = { queryMany } as unknown as GeniusQueryService;
 
     const result = await evaluateRecallAtK(
       [
@@ -87,18 +90,21 @@ describe("recall@8", () => {
     );
 
     expect(result).toEqual({ k: 8, queries: 2, expected: 3, hits: 2, recall: 2 / 3 });
-    expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.calls[0]?.[0]).toEqual({ text: "first", k: 8 });
+    expect(queryMany).toHaveBeenCalledTimes(1);
+    expect(queryMany.mock.calls[0]?.[0]).toEqual([
+      { text: "first", k: 8 },
+      { text: "second", k: 8 },
+    ]);
   });
 
   it("prints an explicit Japanese message and exits zero when gold is missing", async () => {
     const directory = await makeTemporaryDirectory();
     const output: string[] = [];
     const queryService = {
-      query: vi.fn(async () => {
+      queryMany: vi.fn(async () => {
         throw new Error("must not query when gold is missing");
       }),
-    } as GeniusQueryService;
+    } as unknown as GeniusQueryService;
 
     const exitCode = await runEvaluationCli([], {
       cwd: directory,
@@ -108,18 +114,19 @@ describe("recall@8", () => {
 
     expect(exitCode).toBe(0);
     expect(output.join("")).toContain("未作成");
-    expect(queryService.query).not.toHaveBeenCalled();
+    expect(queryService.queryMany).not.toHaveBeenCalled();
   });
 
   it("fails before querying when an existing gold file is malformed", async () => {
     const directory = await makeTemporaryDirectory();
     const goldPath = join(directory, "gold.jsonl");
-    await writeFile(goldPath, '{"query":"missing expected refs"}\n', "utf8");
-    const queryService = { query: vi.fn() } as unknown as GeniusQueryService;
+    const missingRefsLine = '{"query":"missing expected refs"}';
+    await writeFile(goldPath, missingRefsLine + "\n", "utf8");
+    const queryService = { queryMany: vi.fn() } as unknown as GeniusQueryService;
 
     await expect(
       runEvaluationCli(["--gold", goldPath], { cwd: directory, queryService }),
     ).rejects.toThrow(/expectedSourceRefs/);
-    expect(queryService.query).not.toHaveBeenCalled();
+    expect(queryService.queryMany).not.toHaveBeenCalled();
   });
 });

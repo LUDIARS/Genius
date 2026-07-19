@@ -93,6 +93,24 @@ Tier 2 は夜間バッチで段階投入 / 真の FT は見送り (カードは�
     支配的。環境要因のため暫定許容し、性能テストは `GENIUS_PERF_P95_MS` で
     実測に合わせられる (既定 300 は GPU 時の目標として維持)。改善は Memoria
     タスク (GPU runner 更新 or 軽量埋め込みモデル検討) で追う。
+  - **Memoria #553 対応 (2026-07-19)**: GPU (CUDA PTX 非対応) は環境要因の
+    ままで恒久対応不可。軽量モデルは 1024 次元固定の clone_vec スキーマ
+    (`VectorStore` が 1024 以外を拒否) を壊さずに使える代替が無く見送り
+    (dim 変更は別途スキーマ移行が必要、本タスクの範囲外)。実装した対策:
+    1. `OllamaEmbeddingClient` に `keepAlive` (Ollama `keep_alive`) を追加。
+       この環境ではモデル unload 後の再ロードが GPU 経路をまず試みて失敗し、
+       実測で単発 12.8 秒の詰まりを確認 (壊れた CUDA + 既定 5 分アンロード の
+       組み合わせ)。`numGpu=0` 固定に加え `keepAlive` を設定すると回避できる。
+       単発クエリの温間 p95 自体は変わらない (CPU 推論コストが支配的なため)。
+    2. `QueryService.queryMany` / `POST /api/clone/query-batch` /
+       `GeniusHttpClient.queryMany` を追加し、複数クエリの埋め込みを 1 回の
+       Ollama 往復に集約。実測: 8 件バッチで 751ms/query (逐次) → 225ms/query
+       (batched) = 約 3.3〜4倍/query (直近 3 回の実測: 730/222, 754/201,
+       751/225 ms)。`evaluateRecallAtK` (recall eval) をこの API に載せ替え、
+       ゴールドレコード全件を 1 往復で埋め込むよう変更 (既存の逐次 N 往復から)。
+       単一クエリの API 経路 (`/api/clone/query`) は意図的に変更していない
+       (人為的なバッチ遅延を注入しないため)。
+    詳細は `spec/tasks/task-07-query-embedding-optimization.md`。
 - CLI: `genius query "<text>" [--domain work] [--visibility public]`。
 - MCP server (stdio): tool `genius_query` — Claude Code / Codex から直接引ける。
 - ハーネスフック用スクリプト `hooks/genius-supply.mjs`: stdin にプロンプト

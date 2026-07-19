@@ -85,6 +85,39 @@ describe("OllamaEmbeddingClient", () => {
     }]);
   });
 
+  it("sends keep_alive only when it is explicitly configured", async () => {
+    const requestBodies: unknown[] = [];
+    const client = new OllamaEmbeddingClient({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "bge-m3",
+      dimension: 2,
+      keepAlive: "30m",
+      fetch: (async (_input, init) => {
+        requestBodies.push(JSON.parse(String(init?.body)) as unknown);
+        return Response.json({ model: "bge-m3", embeddings: [[1, 0]] });
+      }) as typeof fetch,
+    });
+
+    await expect(client.embed(["explicit keep-alive request"])).resolves.toEqual([[1, 0]]);
+    expect(requestBodies).toEqual([{
+      model: "bge-m3",
+      input: ["explicit keep-alive request"],
+      keep_alive: "30m",
+    }]);
+  });
+
+  it("rejects an empty keepAlive instead of silently ignoring it", () => {
+    expect(
+      () =>
+        new OllamaEmbeddingClient({
+          baseUrl: "http://127.0.0.1:11434",
+          model: "bge-m3",
+          dimension: 2,
+          keepAlive: "   ",
+        }),
+    ).toThrow(/keepAlive must not be empty/);
+  });
+
   it("fails explicitly for missing models and malformed dimensions", async () => {
     const missingModelFetch = vi.fn(async (): Promise<Response> =>
       Response.json({ models: [{ name: "different:latest" }] }),

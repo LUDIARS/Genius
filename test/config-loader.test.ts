@@ -106,6 +106,16 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ configPath, environment: {} })).toThrowError(/loopback host/);
   });
 
+  it("applies the documented keep-alive override", () => {
+    const configPath = writeConfig(fixtureDirectory());
+    const config = loadConfig({
+      configPath,
+      environment: { GENIUS_EMBEDDING_KEEP_ALIVE: "30m" },
+    });
+
+    expect(config.embedding.keepAlive).toBe("30m");
+  });
+
   it("allows null sources at load and fails only when selected", () => {
     const config = loadConfig({
       configPath: writeConfig(fixtureDirectory()),
@@ -113,6 +123,7 @@ describe("loadConfig", () => {
     });
 
     expect(config.embedding.numGpu).toBeNull();
+    expect(config.embedding.keepAlive).toBeNull();
     expect(() => resolveConfiguredSources(config, ["memory"], false)).toThrowError(
       /memoryDir is null/,
     );

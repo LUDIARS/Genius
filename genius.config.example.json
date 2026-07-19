@@ -5,7 +5,8 @@
     "baseUrl": "http://127.0.0.1:11434",
     "model": "bge-m3",
     "dim": 1024,
-    "numGpu": null
+    "numGpu": null,
+    "keepAlive": null
   },
   "distill": {
     "backend": "claude-cli",

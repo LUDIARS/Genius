@@ -47,6 +47,14 @@ export const geniusQueryResultSchema = z
 
 export type GeniusQueryResult = z.infer<typeof geniusQueryResultSchema>;
 
+export const geniusQueryBatchResultSchema = z
+  .object({
+    results: z.array(geniusQueryResultSchema),
+  })
+  .strict();
+
+export type GeniusQueryBatchResult = z.infer<typeof geniusQueryBatchResultSchema>;
+
 export const publicSuppliedCardSchema = z
   .object({
     domain: domainSchema,
@@ -94,4 +102,6 @@ export function toPublicGeniusQueryResult(result: GeniusQueryResult): PublicGeni
 
 export interface GeniusQueryService {
   query(input: GeniusQueryInput): Promise<GeniusQueryResult>;
+  /** Batches embedding for several queries into a single round trip. */
+  queryMany(inputs: readonly GeniusQueryInput[]): Promise<GeniusQueryResult[]>;
 }
