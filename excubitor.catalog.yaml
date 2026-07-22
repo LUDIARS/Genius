@@ -1,0 +1,20 @@
+# Genius catalog fragment (Excubitor が ${ARS_ROOT} 直下を走査して集積する)
+# スキーマは catalog/services.yaml と同一 (ServiceSchema)。private リポなのでここに定義を置く。
+services:
+  - code: genius
+    name: Genius (自分クローン判断カードDB)
+    tier: personal
+    project_code: genius
+    component: backend
+    port: 4230
+    repo: LUDIARS/Genius
+    runtime: node
+    cwd: ${ARS_ROOT}/Genius
+    command: npm run start
+    autostart: false
+    health:
+      type: http
+      url: http://localhost:4230/healthz
+      interval_sec: 30
+    provides:
+      GENIUS_URL: http://${host}:${port}
