@@ -54,11 +54,14 @@ node dist/cli.js ingest --sources memory,session-logs,channel-archives,review,me
 node dist/cli.js stats
 ```
 
-Tier 2 (生ログ 2.7GB) は夜間バッチで段階投入:
+Tier 2 (生ログ 2.7GB) は budget なしで全量投入 (`spec/feature/operations.md` §6)。
+初回は手動実行で backlog を消化してから夜間 timer に乗せる:
 
 ```text
-node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2 --budget-files 500
+node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2
 ```
+
+処理量を抑えたい場合のみ `--budget-files N` で上限を明示する (未指定 = 上限なし)。
 
 引数なし ingest は Tier 1 のみ。`--tier2` を付けて `--sources` を省略すると Tier 1 と
 Tier 2 の両方が対象になる。日次運用、run status の確認、MCP/hook、backup、reembed は

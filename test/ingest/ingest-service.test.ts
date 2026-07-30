@@ -20,10 +20,12 @@ import {
 } from "../../src/ingest/sqlite-ingest-stores.js";
 import { SourceReaderError } from "../../src/readers/reader-error.js";
 import type {
+  ListDocumentsOptions,
   ReaderCursor,
   SourceDocument,
   SourceDocumentBatch,
   SourceDocumentDescriptor,
+  SourceName,
   SourceReader,
 } from "../../src/readers/source-reader.js";
 
@@ -64,6 +66,39 @@ class FixtureReader implements SourceReader {
       sourceRef: "memory:fixture.md",
       title: "Fixture",
       content: "Synthetic input",
+      metadata: {},
+    };
+  }
+}
+
+const tierTwoDescriptor: SourceDocumentDescriptor = {
+  source: "claude-jsonl",
+  tier: 2,
+  locator: "session.jsonl",
+  mtimeMs: 1,
+};
+
+class TierTwoFixtureReader implements SourceReader {
+  readonly source = "claude-jsonl" as const;
+  readonly tier = 2 as const;
+  readonly receivedOptions: ListDocumentsOptions[] = [];
+
+  async listDocuments(
+    cursor: ReaderCursor | null,
+    options?: ListDocumentsOptions,
+  ): Promise<SourceDocumentBatch> {
+    this.receivedOptions.push(options ?? {});
+    return cursor
+      ? { documents: [], nextCursor: cursor }
+      : { documents: [tierTwoDescriptor], nextCursor: { mtimeMs: 1, locator: "session.jsonl" } };
+  }
+
+  async readDocument(): Promise<SourceDocument> {
+    return {
+      descriptor: tierTwoDescriptor,
+      sourceRef: "claude-jsonl:session.jsonl",
+      title: "Session",
+      content: "Synthetic transcript",
       metadata: {},
     };
   }
@@ -120,22 +155,8 @@ describe("IngestService operational behavior", () => {
     }));
   });
 
-  it("keeps Tier 2 out of the default plan and requires an explicit budget", async () => {
-    const resolved: string[] = [];
-    const service = new IngestService({
-      distiller: { distill: async () => ({ cardsCreated: 0, cardsMerged: 0 }) },
-      failures: new SqliteIngestFailureStore(database),
-      logger: new MemoryLogger(),
-      readers: {
-        resolve: (source) => {
-          resolved.push(source);
-          return null;
-        },
-      },
-      runs,
-      state: new SqliteIngestStateStore(database),
-      warningSink: () => undefined,
-    });
+  it("keeps Tier 2 out of the default plan without tier2=true", async () => {
+    const { resolved, service } = createPlanTracker(database, runs);
 
     const run = service.start({ allowMissing: true });
     await service.wait(run.id);
@@ -146,9 +167,66 @@ describe("IngestService operational behavior", () => {
       "review",
       "memoria",
     ]);
-    expect(() => service.start({ tier2: true, allowMissing: true })).toThrow(
-      "explicit budgetFiles",
-    );
+  });
+
+  it("plans Tier 1 and Tier 2 when tier2=true omits an explicit source list", async () => {
+    // Dropping the "budget is mandatory" throw made bare `--tier2` reachable,
+    // so the widened default plan documented in README/setup needs its own
+    // guard (spec/feature/operations.md section 6).
+    const { resolved, service } = createPlanTracker(database, runs);
+
+    const run = service.start({ tier2: true, allowMissing: true });
+    await service.wait(run.id);
+    expect(resolved).toEqual([
+      "memory",
+      "session-logs",
+      "channel-archives",
+      "review",
+      "memoria",
+      "claude-jsonl",
+      "codex-jsonl",
+    ]);
+  });
+
+  it("runs Tier 2 without a budget and passes no cap to the reader", async () => {
+    // Unbounded path: absence of budgetFiles must reach the reader as absence,
+    // not as a silent default cap (spec/feature/operations.md section 6).
+    const { reader, service } = createTierTwoHarness(database, runs);
+
+    const run = service.start({ sources: ["claude-jsonl"], tier2: true });
+    const finished = await service.wait(run.id);
+
+    expect(finished).toMatchObject({ status: "completed", filesProcessed: 1 });
+    expect(reader.receivedOptions).toEqual([{}]);
+  });
+
+  it("forwards an explicit budgetFiles to Tier 2 readers as before", async () => {
+    const { reader, service } = createTierTwoHarness(database, runs);
+
+    const run = service.start({ sources: ["claude-jsonl"], tier2: true, budgetFiles: 7 });
+    const finished = await service.wait(run.id);
+
+    expect(finished).toMatchObject({ status: "completed", filesProcessed: 1 });
+    expect(reader.receivedOptions).toEqual([{ budgetFiles: 7 }]);
+  });
+
+  it("rejects a non-positive budgetFiles before creating a run", () => {
+    const { service } = createTierTwoHarness(database, runs);
+
+    expect(() => service.start({ sources: ["claude-jsonl"], tier2: true, budgetFiles: 0 }))
+      .toThrow(IngestValidationError);
+    expect(runs.get("run-1")).toBeNull();
+  });
+
+  it("rejects budgetFiles without tier2 instead of silently ignoring the cap", () => {
+    // The cap only applies to Tier 2 reads, so a Tier 1-only run that supplies
+    // one must fail loudly rather than drop it (mirrors the API-level rule kept
+    // by spec/feature/operations.md section 6).
+    const { service } = createPlanTracker(database, runs);
+
+    expect(() => service.start({ sources: ["memory"], budgetFiles: 5, allowMissing: true }))
+      .toThrow("budgetFiles requires tier2=true");
+    expect(runs.get("run-1")).toBeNull();
   });
 
   it("records a zero-card document as skipped with a document-local reason", async () => {
@@ -226,6 +304,45 @@ describe("IngestService operational behavior", () => {
     expect(warnings.join(" ")).not.toContain(privateLocator);
   });
 });
+
+function createPlanTracker(
+  database: GeniusDatabase,
+  runs: IngestRunStore,
+): { resolved: SourceName[]; service: IngestService } {
+  const resolved: SourceName[] = [];
+  const service = new IngestService({
+    distiller: { distill: async () => ({ cardsCreated: 0, cardsMerged: 0 }) },
+    failures: new SqliteIngestFailureStore(database),
+    logger: new MemoryLogger(),
+    readers: {
+      resolve: (source) => {
+        resolved.push(source);
+        return null;
+      },
+    },
+    runs,
+    state: new SqliteIngestStateStore(database),
+    warningSink: () => undefined,
+  });
+  return { resolved, service };
+}
+
+function createTierTwoHarness(
+  database: GeniusDatabase,
+  runs: IngestRunStore,
+): { reader: TierTwoFixtureReader; service: IngestService } {
+  const reader = new TierTwoFixtureReader();
+  const service = new IngestService({
+    distiller: { distill: async () => ({ cardsCreated: 1, cardsMerged: 0 }) },
+    failures: new SqliteIngestFailureStore(database),
+    logger: new MemoryLogger(),
+    readers: { resolve: (source) => source === "claude-jsonl" ? reader : null },
+    runs,
+    state: new SqliteIngestStateStore(database),
+    warningSink: () => undefined,
+  });
+  return { reader, service };
+}
 
 function createService(
   database: GeniusDatabase,

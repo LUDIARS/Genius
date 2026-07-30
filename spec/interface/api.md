@@ -11,7 +11,7 @@
 | GET | `/api/clone/cards/:id` | 単体 |
 | POST | `/api/clone/cards` | 手動カード追加 (public は保存直前に共通センシティブ検査) |
 | PATCH | `/api/clone/cards/:id` | 本文修正 / supersede / 象限訂正 (訂正時は再埋め込み) |
-| POST | `/api/clone/ingest/run` | `{sources?: string[], tier2?: boolean, budgetFiles?: number, allowMissing?: boolean, retryFailed?: boolean}` → run id (非同期実行)。`retryFailed=true` は `ingest_failures` の未解決文書だけをカーソル無関係に再処理する (`budgetFiles` と併用不可) |
+| POST | `/api/clone/ingest/run` | `{sources?: string[], tier2?: boolean, budgetFiles?: number, allowMissing?: boolean, retryFailed?: boolean}` → run id (非同期実行)。`budgetFiles` は `tier2=true` の時のみ指定可・未指定は上限なし (全未読ファイル)、明示時のみ Tier 2 の読み取り上限。`retryFailed=true` は `ingest_failures` の未解決文書だけをカーソル無関係に再処理する (`budgetFiles` と併用不可) |
 | GET | `/api/clone/ingest/runs/:id` | 実行状況 (distill_runs)。`status` は `running \| completed \| completed-with-errors \| failed` の 4 値 union — **「completed 以外は失敗」と判定しない** (`completed-with-errors` は正常終了扱い)。`failedDocuments` (この run で隔離された失敗文書数) と `unresolvedFailures` (run 対象ソースの未解決失敗件数) を含む |
 | GET | `/api/clone/stats` | 象限別カード数 / tier 別 / 最終 ingest / `unresolvedIngestFailures` (全ソースの未解決失敗件数) |
 | GET | `/api/clone/export` | `?visibility=public` — public カードの JSON export (datahub push 用素材。push 自体はスコープ外) |
@@ -23,7 +23,9 @@
 
 ```
 genius query "<text>" [--domain work|hobby] [--visibility public|sensitive] [-k 8]
-genius ingest [--sources memory,review] [--tier2] [--budget-files 500] [--allow-missing] [--retry-failed]
+genius ingest [--sources memory,review] [--tier2 [--budget-files 500]] [--allow-missing] [--retry-failed]
+# --budget-files は --tier2 と組でのみ指定可。未指定 = 上限なし (全未読ファイル)
+# --retry-failed は未解決の失敗文書だけを再処理する (--budget-files と併用不可)
 genius stats
 genius reembed --model <name>   # モデル移行バッチ
 ```

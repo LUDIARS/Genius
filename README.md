@@ -139,9 +139,16 @@ node dist/cli.js ingest
 node dist/cli.js ingest --sources memory,session-logs,review
 ```
 
-Tier 2 は明示的な `--tier2` と正の `--budget-files` が必須です。Tier 2 だけを処理する
-夜間バッチでは `--sources` も明示してください。budget は各 Tier 2 reader が新しい順に
-読むファイル数の上限です。
+Tier 2 は明示的な `--tier2` が必須です。`--budget-files` は任意で、未指定なら上限なし
+(全未読ファイルを処理) です。明示指定した場合のみ、各 Tier 2 reader が新しい順に読む
+ファイル数の上限として機能します (後方互換)。Tier 2 だけを処理する夜間バッチでは
+`--sources` も明示してください。
+
+```text
+node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2
+```
+
+処理量を抑えたい場合だけ上限を付けます:
 
 ```text
 node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2 --budget-files 500
@@ -317,7 +324,7 @@ Timer Delegation には上記 command、Genius repository の working directory�
 
 ### Tier 2 夜間バッチ (Memoria #550)
 
-Tier 2 は日次 Tier 1 と分け、明示 budget 付きの夜間 job にします。`--sources` を
+Tier 2 は日次 Tier 1 と分け、budget なし (全量) の夜間 job にします。`--sources` を
 省略したまま `--tier2` を付けると Tier 1 と Tier 2 の両方が対象になってしまうため、
 夜間 job では Tier 2 ソースのみを明示します。
 
@@ -325,11 +332,30 @@ Tier 2 は日次 Tier 1 と分け、明示 budget 付きの夜間 job にしま�
 npm run ingest:tier2-nightly
 ```
 
-このスクリプトは `node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2
---budget-files 500` を固定でラップしたものです (`test/cli.test.ts` に、この厳密な引数列が
-CLI パーサと ingest サービスの契約どおりに解決されることを保証する回帰テストがあります)。
-budget を変える場合は `node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2
---budget-files <N>` を直接呼び出してください。
+このスクリプトは `node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2`
+を固定でラップしたものです (`test/cli.test.ts` に、この厳密な引数列が CLI パーサと
+ingest サービスの契約どおりに解決されることを保証する回帰テストがあります)。budget は
+未指定 = 上限なしです。上限を付けたい場合は `node dist/cli.js ingest --sources
+claude-jsonl,codex-jsonl --tier2 --budget-files <N>` を直接呼び出してください。
+
+**初回のみ手動実行で全量を消化してから timer に乗せてください。** 未読 backlog 全体
+(生ログ数 GB 規模) を初回 run が一度に処理するため、実行時間が大きく伸びます。増分
+カーソルがあるので 2 回目以降は実質差分のみですが、timer 側の完了待ちタイムアウトは
+初回実測に合わせて設定してください。
+
+カーソルはソース単位で「そのソースの batch を全件処理し終えた後」に保存されます。
+文書単位の失敗は隔離されて run は続行するため (`ingest_failures` に記録され
+`completed-with-errors` で終わる)、カーソルは通常どおり進みます。一方 run が
+プロセスごと中断された場合 (timer のタイムアウト打ち切り・クラッシュ) は、その
+ソースの進捗が保存されず次回は最初からやり直しになります。timer の完了待ち
+タイムアウトが初回 run より短いと毎回打ち切られて永久に進まないため、初回は必ず
+手動で完走させてください。
+
+既に `--budget-files N` 付きで運用していた環境から移行する場合、保存済みカーソルに
+未消化の catch-up 範囲が残っていることがあります。この場合 batch を mtime 降順に
+保つため、上限なしでも 1 回目で catch-up 範囲、2 回目で残りの backlog という順に
+分かれます (取りこぼし・再処理は無し)。`documents` が空になる run まで繰り返せば
+消化完了です。
 
 Timer Delegation の実際のスケジュール登録 (cron 式・delegation template の追加) は
 Concordia 自身のコード (`src/delegation/seed.ts` の template 定義と
@@ -402,7 +428,7 @@ sqlite3 data/genius.db ".backup 'data/backups/genius-snapshot.db'"
 | Ollama GPU runner が明示エラーになる | GPU runtime を修復するか、意図して CPU 実行する場合だけ config の `embedding.numGpu` または `GENIUS_EMBEDDING_NUM_GPU=0` を設定する |
 | 疎なリクエスト後に最初のクエリだけ極端に遅い/詰まる | GPU runtime が壊れたホストでは unload 後の再ロードが GPU 経路を試みて失敗し得る。`embedding.keepAlive` または `GENIUS_EMBEDDING_KEEP_ALIVE` (例 `"30m"`) でモデル常駐を維持する |
 | source is not configured | config の該当 source を設定する。意図した欠損だけ `--allow-missing` を使う |
-| Tier 2 budget error | `--tier2 --budget-files N` を組にして指定する |
+| Tier 2 budget error | `--budget-files N` は `--tier2` と組で、正の整数だけを指定する。未指定は上限なしで正常 |
 | Claude CLI 起動・認証エラー | `claude` が PATH 上にあり、対話不要で認証済みか確認する |
 | MCP/hook が config を見つけない | cwd を repository にするか、loopback の `GENIUS_BASE_URL` を明示する |
 | hook が compiled config を見つけない | repository で `npm run build` を実行する |

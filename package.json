@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/server.ts",
     "eval": "tsx src/eval/cli.ts",
-    "ingest:tier2-nightly": "node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2 --budget-files 500",
+    "ingest:tier2-nightly": "node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2",
     "mcp": "tsx src/mcp/server.ts",
     "migrate": "tsx src/db/migrate-cli.ts",
     "start": "node dist/server.js",

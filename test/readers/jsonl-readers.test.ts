@@ -59,11 +59,7 @@ describe("Tier 2 JSONL readers", () => {
   });
 
   it("enforces budget and drains new catch-up plus old backfill without losing files", async () => {
-    const directory = await makeTemporaryDirectory();
-    for (let index = 1; index <= 5; index += 1) {
-      await writeSyntheticSession(directory, index, MTIME_BASE + index * 1_000);
-    }
-    const reader = new ClaudeJsonlReader(directory);
+    const { directory, reader } = await makeSeededReader(1, 2, 3, 4, 5);
 
     const first = await reader.listDocuments(null, { budgetFiles: 2 });
     expectLocators(first.documents, ["session-5.jsonl", "session-4.jsonl"]);
@@ -73,8 +69,7 @@ describe("Tier 2 JSONL readers", () => {
     expectLocators(second.documents, ["session-3.jsonl", "session-2.jsonl"]);
     const secondCursor = requiredCursor(second.nextCursor);
 
-    await writeSyntheticSession(directory, 7, MTIME_BASE + 7_000);
-    await writeSyntheticSession(directory, 6, MTIME_BASE + 6_000);
+    await seedSyntheticSessions(directory, [7, 6]);
 
     const newHead = await reader.listDocuments(secondCursor, { budgetFiles: 1 });
     expectLocators(newHead.documents, ["session-7.jsonl"]);
@@ -82,7 +77,7 @@ describe("Tier 2 JSONL readers", () => {
 
     // Arrival during an active catch-up is deferred to the next wave, not lost
     // or appended out of mtime order behind the older pending file.
-    await writeSyntheticSession(directory, 8, MTIME_BASE + 8_000);
+    await seedSyntheticSessions(directory, [8]);
 
     const newTail = await reader.listDocuments(requiredCursor(newHead.nextCursor), {
       budgetFiles: 1,
@@ -106,7 +101,7 @@ describe("Tier 2 JSONL readers", () => {
     expect(complete.documents).toEqual([]);
   });
 
-  it("uses locator as a deterministic tie-break and rejects a missing budget", async () => {
+  it("uses locator as a deterministic tie-break and rejects a non-positive budget", async () => {
     const directory = await makeTemporaryDirectory();
     await writeSyntheticSession(directory, 1, MTIME_BASE);
     await writeSyntheticSession(directory, 2, MTIME_BASE);
@@ -114,10 +109,64 @@ describe("Tier 2 JSONL readers", () => {
 
     const batch = await reader.listDocuments(null, { budgetFiles: 1 });
     expectLocators(batch.documents, ["session-2.jsonl"]);
-    await expect(reader.listDocuments(null)).rejects.toThrow("requires budgetFiles");
     await expect(reader.listDocuments(null, { budgetFiles: 0 })).rejects.toThrow(
       "positive integer",
     );
+  });
+
+  it("processes every unread file in one batch when no budget is given", async () => {
+    // Unbounded Tier 2 path (spec/feature/operations.md section 6): a missing
+    // budget is "no cap", not an error and not a hidden default.
+    const { directory, reader } = await makeSeededReader(1, 2, 3, 4, 5);
+
+    const initial = await reader.listDocuments(null);
+    expectLocators(initial.documents, [
+      "session-5.jsonl",
+      "session-4.jsonl",
+      "session-3.jsonl",
+      "session-2.jsonl",
+      "session-1.jsonl",
+    ]);
+
+    // Incremental run after new arrivals also drains everything at once.
+    await seedSyntheticSessions(directory, [7, 6]);
+    const incremental = await reader.listDocuments(requiredCursor(initial.nextCursor));
+    expectLocators(incremental.documents, ["session-7.jsonl", "session-6.jsonl"]);
+
+    const drained = await reader.listDocuments(requiredCursor(incremental.nextCursor));
+    expect(drained.documents).toEqual([]);
+  });
+
+  it("drains a catch-up left by an earlier budgeted run before going unbounded", async () => {
+    // Upgrade path for deployments that already ran with `--budget-files N`:
+    // their persisted cursor can carry a pending `catchUp` range. An unbounded
+    // run must finish that range first (batches stay strictly mtime-descending),
+    // then drain the remaining backlog — no file is skipped or replayed.
+    const { directory, reader } = await makeSeededReader(1, 2, 3, 4, 5);
+
+    const budgeted = await reader.listDocuments(null, { budgetFiles: 2 });
+    expectLocators(budgeted.documents, ["session-5.jsonl", "session-4.jsonl"]);
+
+    await seedSyntheticSessions(directory, [7, 6]);
+    const partial = await reader.listDocuments(requiredCursor(budgeted.nextCursor), {
+      budgetFiles: 1,
+    });
+    expectLocators(partial.documents, ["session-7.jsonl"]);
+    expect(partial.nextCursor?.catchUp).toBeDefined();
+
+    const catchUp = await reader.listDocuments(requiredCursor(partial.nextCursor));
+    expectLocators(catchUp.documents, ["session-6.jsonl"]);
+    expect(catchUp.nextCursor?.catchUp).toBeUndefined();
+
+    const backfill = await reader.listDocuments(requiredCursor(catchUp.nextCursor));
+    expectLocators(backfill.documents, [
+      "session-3.jsonl",
+      "session-2.jsonl",
+      "session-1.jsonl",
+    ]);
+
+    const complete = await reader.listDocuments(requiredCursor(backfill.nextCursor));
+    expect(complete.documents).toEqual([]);
   });
 });
 
@@ -129,6 +178,23 @@ async function makeTemporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "genius-jsonl-reader-test-"));
   temporaryDirectories.push(directory);
   return directory;
+}
+
+async function makeSeededReader(
+  ...indices: readonly number[]
+): Promise<{ directory: string; reader: ClaudeJsonlReader }> {
+  const directory = await makeTemporaryDirectory();
+  await seedSyntheticSessions(directory, indices);
+  return { directory, reader: new ClaudeJsonlReader(directory) };
+}
+
+async function seedSyntheticSessions(
+  directory: string,
+  indices: readonly number[],
+): Promise<void> {
+  for (const index of indices) {
+    await writeSyntheticSession(directory, index, MTIME_BASE + index * 1_000);
+  }
 }
 
 async function writeSyntheticSession(

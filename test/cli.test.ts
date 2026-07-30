@@ -94,16 +94,39 @@ describe("Genius CLI", () => {
 
   it("parses the exact args encoded by the ingest:tier2-nightly npm script (Memoria #550)", async () => {
     // Regression guard: package.json's "ingest:tier2-nightly" script hardcodes
-    // `ingest --sources claude-jsonl,codex-jsonl --tier2 --budget-files 500`.
-    // If a future CLI change breaks this exact invocation, this test must fail
-    // instead of the drift being discovered only when the nightly job runs.
-    const requests: Array<{ path: string; body: unknown }> = [];
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(String(input));
-      const body = typeof init?.body === "string" ? JSON.parse(init.body) as unknown : null;
-      requests.push({ path: url.pathname, body });
-      return Response.json({ id: "run-tier2", status: "running" }, { status: 202 });
-    });
+    // `ingest --sources claude-jsonl,codex-jsonl --tier2` (no budget = process
+    // every unread Tier 2 file). If a future CLI change breaks this exact
+    // invocation, this test must fail instead of the drift being discovered
+    // only when the nightly job runs.
+    const { fetchMock, requests } = createIngestRequestCapture("run-tier2");
+    const output: string[] = [];
+
+    await expect(runCli(
+      ["ingest", "--sources", "claude-jsonl,codex-jsonl", "--tier2"],
+      {
+        configPath,
+        environment: {},
+        fetch: fetchMock,
+        stdout: (text: string) => output.push(text),
+      },
+    )).resolves.toBe(0);
+
+    expect(requests).toEqual([
+      {
+        path: "/api/clone/ingest/run",
+        body: {
+          sources: ["claude-jsonl", "codex-jsonl"],
+          tier2: true,
+          allowMissing: false,
+          retryFailed: false,
+        },
+      },
+    ]);
+    expect(output.join("\n")).toContain('"run-tier2"');
+  });
+
+  it("still forwards an explicit --budget-files as a Tier 2 cap", async () => {
+    const { fetchMock, requests } = createIngestRequestCapture("run-tier2-capped");
     const output: string[] = [];
 
     await expect(runCli(
@@ -111,7 +134,7 @@ describe("Genius CLI", () => {
       {
         configPath,
         environment: {},
-        fetch: fetchMock as typeof fetch,
+        fetch: fetchMock,
         stdout: (text: string) => output.push(text),
       },
     )).resolves.toBe(0);
@@ -128,7 +151,7 @@ describe("Genius CLI", () => {
         },
       },
     ]);
-    expect(output.join("\n")).toContain('"run-tier2"');
+    expect(output.join("\n")).toContain('"run-tier2-capped"');
   });
 
   it("runs reembed against the explicitly configured local Ollama path", async () => {
@@ -157,3 +180,17 @@ describe("Genius CLI", () => {
     expect(output.join("")).toContain('"cardsReembedded": 0');
   });
 });
+
+function createIngestRequestCapture(runId: string): {
+  fetchMock: typeof fetch;
+  requests: Array<{ path: string; body: unknown }>;
+} {
+  const requests: Array<{ path: string; body: unknown }> = [];
+  const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) as unknown : null;
+    requests.push({ path: url.pathname, body });
+    return Response.json({ id: runId, status: "running" }, { status: 202 });
+  });
+  return { fetchMock: fetchMock as typeof fetch, requests };
+}

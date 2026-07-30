@@ -208,7 +208,10 @@ export class IngestService {
   ): Promise<void> {
     const cursor = this.#state.get(source);
     const batch = await reader.listDocuments(cursor, {
-      ...(reader.tier === 2 ? { budgetFiles: options.budgetFiles } : {}),
+      // 未指定は「未読を全部」の意味なので、キー自体を渡さない (operations.md §6)。
+      ...(reader.tier === 2 && options.budgetFiles !== undefined
+        ? { budgetFiles: options.budgetFiles }
+        : {}),
     });
     for (const descriptor of batch.documents) {
       await this.#processDocument(runId, source, reader, descriptor, totals, failures);
@@ -375,7 +378,8 @@ export class IngestService {
 interface NormalizedIngestOptions {
   sources: readonly SourceName[];
   tier2: boolean;
-  budgetFiles: number;
+  /** Absent means "no cap": Tier 2 readers process every unread file. */
+  budgetFiles: number | undefined;
   allowMissing: boolean;
   retryFailed: boolean;
 }
@@ -386,12 +390,16 @@ function normalizeOptions(options: IngestOptions): NormalizedIngestOptions {
   if (retryFailed && options.budgetFiles !== undefined) {
     throw new IngestValidationError("retryFailed does not accept budgetFiles");
   }
-  if (tier2 && !retryFailed && options.budgetFiles === undefined) {
-    throw new IngestValidationError("Tier 2 ingest requires an explicit budgetFiles value");
-  }
-  const budgetFiles = options.budgetFiles ?? 500;
-  if (!Number.isSafeInteger(budgetFiles) || budgetFiles <= 0) {
+  // 未指定は無制限 (operations.md §6)。既定値を入れると「全量のつもりで上限が
+  // かかる」無言フォールバックになるため、undefined のまま reader へ渡す。
+  const budgetFiles = options.budgetFiles;
+  if (budgetFiles !== undefined && (!Number.isSafeInteger(budgetFiles) || budgetFiles <= 0)) {
     throw new IngestValidationError("budgetFiles must be a positive integer");
+  }
+  // budgetFiles only caps Tier 2 reads, so accepting it without tier2 would
+  // silently drop the caller's cap. Reject instead of ignoring.
+  if (budgetFiles !== undefined && !tier2) {
+    throw new IngestValidationError("budgetFiles requires tier2=true");
   }
   const defaults = tier2 ? [...TIER_ONE_SOURCES, ...TIER_TWO_SOURCES] : [...TIER_ONE_SOURCES];
   const sources = options.sources ? [...new Set(options.sources)] : defaults;

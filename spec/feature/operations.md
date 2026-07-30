@@ -197,7 +197,10 @@ status: draft (2026-07-30 neco 方針決定の反映)
     `undefined` を「上限なし」として扱えるようにする (全件処理)。
 - 併せて `--budget-files 500` をベタ書きしている運用面も更新する:
   `package.json` の `ingest:tier2-nightly` スクリプトと、README の Tier 2 節
-  (`node dist/cli.js ingest ... --tier2 --budget-files 500` の記述)。
+  (`node dist/cli.js ingest ... --tier2 --budget-files 500` の記述)、および
+  `src/ingest/concordia-run-notifier.ts` の `retryHint` が通知に載せる再処理
+  コマンド (run 単位の Tier 2 失敗で `--tier2 --budget-files 500` を案内していた。
+  残すと「再処理のつもりで 500 件だけ読む」無言フォールバックになる)。
   `spec/interface/api.md` / `spec/feature/clone-db.md` §4 の
   「`--tier2 --budget-files N` 明示時のみ処理」も追随させる。
 - Concordia Timer Delegation の夜間 job を budget なしに更新する。

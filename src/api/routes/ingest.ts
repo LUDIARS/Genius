@@ -23,13 +23,6 @@ const ingestSchema = z
         message: "retryFailed does not accept budgetFiles",
       });
     }
-    if (input.tier2 && !input.retryFailed && input.budgetFiles === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["budgetFiles"],
-        message: "budgetFiles is required when tier2 is true",
-      });
-    }
     if (!input.tier2 && input.budgetFiles !== undefined) {
       context.addIssue({
         code: "custom",

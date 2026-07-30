@@ -107,10 +107,10 @@ function retryHint(notification: IngestRunNotification): string {
   return [
     "retry: node dist/cli.js ingest",
     `--sources ${sources.join(",")}`,
-    // Tier 2 ソースは --tier2 が無いと CLI/API の検証で落ちる。隔離された文書が
-    // 無い run 単位の失敗は --retry-failed が空振りするので通常の再実行を促すが、
-    // その場合 --tier2 には --budget-files も要る。
-    ...(tierTwo ? (isolated ? ["--tier2"] : ["--tier2 --budget-files 500"]) : []),
+    // Tier 2 ソースは --tier2 が無いと CLI/API の検証で落ちる。budget は未指定 =
+    // 上限なしなので付けない — ここで --budget-files を足すと、再処理のつもりの
+    // コマンドが黙って途中までしか読まなくなる (spec/feature/operations.md §6)。
+    ...(tierTwo ? ["--tier2"] : []),
     ...(isolated ? ["--retry-failed"] : []),
   ].join(" ");
 }

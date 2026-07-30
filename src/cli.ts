@@ -105,13 +105,6 @@ async function runIngest(
   if (parsed.values["retry-failed"] && parsed.values["budget-files"] !== undefined) {
     throw new Error("--retry-failed does not accept --budget-files");
   }
-  if (
-    parsed.values.tier2
-    && !parsed.values["retry-failed"]
-    && parsed.values["budget-files"] === undefined
-  ) {
-    throw new Error("--tier2 requires --budget-files N");
-  }
   const budgetFiles = parsed.values["budget-files"] === undefined
     ? undefined
     : positiveInteger(parsed.values["budget-files"], "budget-files");
@@ -233,7 +226,7 @@ function usage(): string {
   return [
     "Usage:",
     '  genius query "<text>" [--domain work|hobby] [--visibility public|sensitive] [-k 8]',
-    "  genius ingest [--sources memory,review] [--tier2 --budget-files 500] [--allow-missing] [--retry-failed]",
+    "  genius ingest [--sources memory,review] [--tier2 [--budget-files 500]] [--allow-missing] [--retry-failed]",
     "  genius stats",
     "  genius reembed --model <name>",
     "",

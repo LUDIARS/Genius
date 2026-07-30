@@ -12,7 +12,8 @@ status: done
   (diary・notes・tasks を HTTP GET、読み取りのみ)
 - Tier 2: Claude transcripts JSONL / Codex sessions JSONL —
   ストリーム読み (全量メモリ展開禁止。1.5GB 級 dir を同期全走査しない。
-  ファイル列挙→ mtime 降順→ budget 件数のみ処理)
+  ファイル列挙→ mtime 降順→ budget 明示時は budget 件数のみ、未指定時は
+  全未読ファイルを処理。`spec/feature/operations.md` §6)
 - `ingest_state` カーソルで増分。`--allow-missing` 時のみ欠損ソースをスキップ
   (警告出力必須)。
 - **ソースへの書き込み禁止** (open は読み取りモードのみ)。

@@ -56,7 +56,10 @@ export interface SourceDocument {
 }
 
 export interface ListDocumentsOptions {
-  /** Required by Tier 2 readers; ignored only when absent for Tier 1. */
+  /**
+   * Optional per-run cap on Tier 2 file reads. Absent means no cap: every
+   * unread file is eligible. Ignored by Tier 1 readers.
+   */
   readonly budgetFiles?: number;
 }
 

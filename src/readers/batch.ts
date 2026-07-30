@@ -38,7 +38,7 @@ export function createTierTwoBatch(
   budgetFiles: number | undefined,
 ): SourceDocumentBatch {
   assertCursorForSource(source, cursor);
-  const budget = requireBudget(source, budgetFiles);
+  const budget = resolveBudget(source, budgetFiles);
   const ordered = [...descriptors].sort(compareDescriptorsDescending);
   if (ordered.length === 0) {
     return { documents: [], nextCursor: cursor };
@@ -167,9 +167,12 @@ export function createTierTwoBatch(
   };
 }
 
-function requireBudget(source: SourceName, value: number | undefined): number {
+function resolveBudget(source: SourceName, value: number | undefined): number {
   if (value === undefined) {
-    throw new SourceReaderError(source, "Tier 2 requires budgetFiles");
+    // No explicit budget means the whole unread backlog is eligible in one
+    // batch. Infinity keeps every slice/remaining-budget computation below
+    // meaning "take everything" without a separate unbounded code path.
+    return Number.POSITIVE_INFINITY;
   }
   if (!Number.isInteger(value) || value <= 0) {
     throw new SourceReaderError(source, "budgetFiles must be a positive integer");

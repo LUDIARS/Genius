@@ -10,13 +10,15 @@ Tier 2 (Claude/Codex 生 JSONL、計 2.7GB) の夜間バッチ投入を「登録
 コマンドを Genius リポジトリ側に用意することがスコープ。
 
 - `package.json` に `ingest:tier2-nightly` スクリプトを追加。
-  `node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2
-  --budget-files 500` を固定でラップする。budget (500) は README の既存例と
-  揃えた既定値。
+  `node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2` を
+  固定でラップする。budget は指定しない (未指定 = 上限なし = 全未読ファイル。
+  `spec/feature/operations.md` §6 / 人間判断 #5「全部」)。
+  当初は `--budget-files 500` を付けていたが、§6 の全量投入化で撤去した。
 - `test/cli.test.ts` に、この厳密な引数列 (`--sources
-  claude-jsonl,codex-jsonl --tier2 --budget-files 500`) が CLI パーサと
+  claude-jsonl,codex-jsonl --tier2`) が CLI パーサと
   `POST /api/clone/ingest/run` の body 契約どおりに解決されることを保証する
   回帰テストを追加 (npm script の中身が CLI 契約からドリフトしたら赤くなる)。
+  明示 `--budget-files` が引き続き上限として転送されることも別テストで担保する。
 - README「日次運用と Concordia Timer Delegation」に Tier 2 夜間バッチの節を追加し、
   `npm run ingest:tier2-nightly` の呼び出し例と、Concordia 側の実際の登録手順との
   境界を明記した。

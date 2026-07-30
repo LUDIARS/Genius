@@ -111,6 +111,19 @@ describe("ConcordiaRunNotifier", () => {
     }));
     expect(runLevel).toContain("--sources memory");
     expect(runLevel).not.toContain("--retry-failed");
+
+    // run 単位の Tier 2 失敗でも budget は付けない。未指定 = 上限なしなので、
+    // ここで上限を足すと再処理が黙って途中までで終わる
+    // (spec/feature/operations.md §6)。
+    const tierTwoRunLevel = formatNotificationText(notification({
+      status: "failed",
+      sources: ["claude-jsonl"],
+      failures: [],
+      failedDocuments: 0,
+      error: "Ingest failed: source-read-failed; source=claude-jsonl",
+    }));
+    expect(tierTwoRunLevel).toContain("--sources claude-jsonl --tier2");
+    expect(tierTwoRunLevel).not.toContain("--budget-files");
   });
 
   it("fails fast on an unreachable endpoint and on a rejected response", async () => {

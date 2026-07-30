@@ -259,6 +259,25 @@ describe("clone API", () => {
     expect((await app.request("/api/clone/ingest/runs/unknown")).status).toBe(404);
   });
 
+  it("accepts tier2 without budgetFiles and forwards it as an unbounded run", async () => {
+    // spec/feature/operations.md section 6: a missing budget means "process the
+    // whole unread backlog", so the API must not require or inject a cap.
+    const app = createApp(services);
+    const response = await app.request("/api/clone/ingest/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sources: ["claude-jsonl", "codex-jsonl"], tier2: true }),
+    });
+
+    expect(response.status).toBe(202);
+    expect(ingestOptions).toEqual({
+      sources: ["claude-jsonl", "codex-jsonl"],
+      tier2: true,
+      allowMissing: false,
+      retryFailed: false,
+    });
+  });
+
   it("reports stats and exports active public cards without source references", async () => {
     const alpha = await createCard("work", "public", "alpha", "private:absolute-looking-ref");
     await createCard("hobby", "sensitive", "beta", "fixture:sensitive", 2);
@@ -351,15 +370,20 @@ describe("clone API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: "decision", visiblity: "public" }),
     });
-    const missingTierTwoBudget = await app.request("/api/clone/ingest/run", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tier2: true }),
-    });
     const implicitTierTwo = await app.request("/api/clone/ingest/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sources: ["claude-jsonl"] }),
+    });
+    // The budget is only a Tier 2 cap, so a Tier 1-only request that supplies
+    // one must fail loudly. This is the branch of the schema's superRefine kept
+    // when the "budgetFiles is required for tier2" branch was dropped
+    // (spec/feature/operations.md section 6); without it, making the budget
+    // optional would turn a caller-supplied cap into a silent no-op.
+    const budgetWithoutTierTwo = await app.request("/api/clone/ingest/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sources: ["memory"], budgetFiles: 5 }),
     });
     services.ingest.start = () => {
       throw new IngestValidationError("Ingest source is not configured: memory");
@@ -372,8 +396,8 @@ describe("clone API", () => {
 
     expect(malformedResponses.map((response) => response.status)).toEqual([400, 400, 400]);
     expect(misspelledVisibility.status).toBe(400);
-    expect(missingTierTwoBudget.status).toBe(400);
     expect(implicitTierTwo.status).toBe(400);
+    expect(budgetWithoutTierTwo.status).toBe(400);
     expect(unconfiguredSource.status).toBe(400);
     expect(ingestOptions).toBeNull();
   });
