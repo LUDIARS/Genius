@@ -217,11 +217,50 @@ describe("DistillationService", () => {
     await expect(service.distill(document())).rejects.toThrow("after 3 attempts");
     expect(llm.requests).toHaveLength(3);
   });
+
+  it("persists a category chosen from the controlled vocabulary", async () => {
+    const llm = new QueueLlm([
+      JSON.stringify({ cards: [card({ visibility: "sensitive", category: "review" })] }),
+    ]);
+    const gateway = new FakeCardGateway();
+
+    await createService(gateway, llm).distill(document());
+
+    expect(gateway.saved[0]?.category).toBe("review");
+  });
+
+  it("rejects a category outside the controlled vocabulary instead of coercing it", async () => {
+    const offVocabulary = JSON.stringify({
+      cards: [card({ visibility: "sensitive", category: "not-a-real-category" })],
+    });
+    const llm = new QueueLlm([offVocabulary, offVocabulary, offVocabulary]);
+    const gateway = new FakeCardGateway();
+
+    await expect(createService(gateway, llm).distill(document())).rejects.toThrow(
+      "after 3 attempts",
+    );
+    expect(gateway.saved).toHaveLength(0);
+  });
+
+  it("rejects a card with a missing category", async () => {
+    const { category: _category, ...withoutCategory } = card({ visibility: "sensitive" });
+    const payload = JSON.stringify({ cards: [withoutCategory] });
+    const llm = new QueueLlm([payload, payload, payload]);
+    const gateway = new FakeCardGateway();
+
+    await expect(createService(gateway, llm).distill(document())).rejects.toThrow(
+      "after 3 attempts",
+    );
+    expect(gateway.saved).toHaveLength(0);
+  });
 });
+
+const TEST_CATEGORY_NAMES = ["impl-design", "review", "general"] as const;
 
 function createService(gateway: FakeCardGateway, llm: DistillLlm): DistillationService {
   return new DistillationService({
     cardGateway: gateway,
+    categoryNames: [...TEST_CATEGORY_NAMES],
     llm,
     prompt: "extract",
     publicCardGate: new LlmPublicCardGate(llm),
@@ -232,6 +271,7 @@ function card(overrides: Partial<DistilledCard> = {}): DistilledCard {
   return {
     domain: "work",
     visibility: "public",
+    category: "impl-design",
     situation: "When two implementation paths are viable",
     judgment: "Choose the path with explicit failure modes",
     rationale: "It keeps defects observable",

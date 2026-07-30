@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ApiServices } from "./contracts.js";
 import { registerCardRoutes } from "./routes/cards.js";
+import { registerCategoryRoutes } from "./routes/categories.js";
 import { registerHealthRoute } from "./routes/health.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerQueryRoute } from "./routes/query.js";
@@ -17,10 +18,11 @@ export function createApp(services: ApiServices): Hono {
     onError: (c) => c.json({ error: "Request body is too large" }, 413),
   }));
   registerHealthRoute(app, services.health);
-  registerQueryRoute(app, services.query);
-  registerCardRoutes(app, services.cards);
+  registerQueryRoute(app, services.query, services.categories);
+  registerCardRoutes(app, services.cards, services.categories);
+  registerCategoryRoutes(app, services.categories);
   registerIngestRoutes(app, services.ingest);
-  registerStatsRoutes(app, services.stats);
+  registerStatsRoutes(app, services.stats, services.categories);
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError((error, c) => {
     if (error instanceof ApiInputError) return inputErrorResponse(c, error);

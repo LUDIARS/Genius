@@ -3,14 +3,14 @@ import { dirname, join } from "node:path";
 import { createApp } from "../api/app.js";
 import type { ApiServices } from "../api/contracts.js";
 import { CardRepository } from "../cards/card-repository.js";
+import { CategoryRepository } from "../categories/category-repository.js";
 import { loadConfig, type LoadConfigOptions } from "../config/load-config.js";
 import type { LoadedGeniusConfig } from "../config/types.js";
 import { openConfiguredDatabase, type GeniusDatabase } from "../db/database.js";
 import { runMigrations } from "../db/migrate.js";
-import { ClaudeCliDistillLlm } from "../distill/claude-cli-llm.js";
+import { renderDistillPrompt } from "../distill/category-vocabulary.js";
+import { createDistillLlm } from "../distill/create-distill-llm.js";
 import { DistillationService } from "../distill/distillation-service.js";
-import type { DistillLlm } from "../distill/distill-llm.js";
-import { OllamaDistillLlm } from "../distill/ollama-llm.js";
 import { LlmPublicCardGate } from "../distill/public-card-gate.js";
 import { CachedEmbeddingClient, EmbeddingCache } from "../embedding/cache.js";
 import { EmbeddingModelRegistry } from "../embedding/model-registry.js";
@@ -86,9 +86,14 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       embedder,
       vectors: new SqliteQueryVectorPort(database, activeModel.dimension),
     });
-    const prompt = readDistillationPrompt(config);
+    // The controlled category vocabulary lives in card_categories; the prompt
+    // only carries a placeholder so there is never a second hardcoded list.
+    const categoryRepository = new CategoryRepository(database);
+    const categoryList = categoryRepository.listSync();
+    const prompt = renderDistillPrompt(readDistillationPrompt(config), categoryList);
     const distiller = new DistillationService({
       cardGateway: new SqliteDistillationCardGateway(database, embedder, cards),
+      categoryNames: categoryList.map((category) => category.name),
       llm,
       prompt,
       publicCardGate,
@@ -108,6 +113,7 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       health: new HealthService(cards, embedder),
       query,
       cards,
+      categories: categoryRepository,
       ingest,
       stats,
     };
@@ -144,19 +150,6 @@ function createRunNotifier(config: LoadedGeniusConfig): IngestRunNotifier | null
     return null;
   }
   return new ConcordiaRunNotifier({ baseUrl: config.notify.concordiaBaseUrl });
-}
-
-function createDistillLlm(config: LoadedGeniusConfig): DistillLlm {
-  if (config.distill.backend === "ollama") {
-    return new OllamaDistillLlm({
-      baseUrl: config.embedding.baseUrl,
-      model: config.distill.ollamaModel,
-    });
-  }
-  return new ClaudeCliDistillLlm({
-    model: config.distill.model,
-    sensitiveCheckModel: config.distill.sensitiveCheckModel,
-  });
 }
 
 function readDistillationPrompt(config: LoadedGeniusConfig): string {

@@ -27,6 +27,7 @@ function resultForSourceRefs(sourceRefs: readonly string[]): GeniusQueryResult {
       id: `card-${index}`,
       domain: "work",
       visibility: "public",
+      category: null,
       situation: "situation",
       judgment: "judgment",
       rationale: "rationale",

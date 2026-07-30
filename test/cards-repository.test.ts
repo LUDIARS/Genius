@@ -8,6 +8,7 @@ function input(overrides: Partial<CreateCardInput> = {}): CreateCardInput {
   return {
     domain: "work",
     visibility: "public",
+    category: null,
     situation: "A design has multiple viable choices",
     judgment: "Choose the explicit contract",
     rationale: "It keeps failures observable",

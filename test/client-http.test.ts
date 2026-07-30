@@ -27,6 +27,7 @@ const CARD = {
   id: "01J00000000000000000000000",
   domain: "work" as const,
   visibility: "public" as const,
+  category: null,
   situation: "A decision is needed",
   judgment: "Choose the reversible option",
   rationale: "It preserves information",

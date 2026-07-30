@@ -23,6 +23,7 @@ interface ExportRow {
   id: string;
   domain: CardDomain;
   visibility: "public";
+  category: string | null;
   situation: string;
   judgment: string;
   rationale: string;
@@ -78,20 +79,26 @@ export class StatsRepository {
     };
   }
 
-  async exportPublic(): Promise<PublicExportCard[]> {
+  async exportPublic(category?: string): Promise<PublicExportCard[]> {
+    if (category !== undefined && category.trim() === "") {
+      throw new Error("export category filter must not be empty");
+    }
+    const categoryClause = category === undefined ? "" : " AND category = ?";
+    const parameters = category === undefined ? [] : [category];
     const rows = this.#database
       .prepare(
-        `SELECT id, domain, visibility, situation, judgment, rationale, tags,
-                source_tier, confidence, created_at, updated_at
+        `SELECT id, domain, visibility, category, situation, judgment, rationale,
+                tags, source_tier, confidence, created_at, updated_at
            FROM clone_cards
-          WHERE visibility = 'public' AND superseded_by IS NULL
+          WHERE visibility = 'public' AND superseded_by IS NULL${categoryClause}
           ORDER BY created_at ASC, id ASC`,
       )
-      .all() as ExportRow[];
+      .all(...parameters) as ExportRow[];
     return rows.map((row) => ({
       id: row.id,
       domain: row.domain,
       visibility: row.visibility,
+      category: row.category,
       situation: row.situation,
       judgment: row.judgment,
       rationale: row.rationale,

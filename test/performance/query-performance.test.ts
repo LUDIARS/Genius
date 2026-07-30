@@ -35,6 +35,7 @@ describe("1,000-card query performance", () => {
         const card = cards.create({
           domain: index % 2 === 0 ? "work" : "hobby",
           visibility: index % 3 === 0 ? "sensitive" : "public",
+          category: null,
           situation: `Synthetic situation ${index}`,
           judgment: `Synthetic judgment ${index}`,
           rationale: `Synthetic rationale ${index}`,

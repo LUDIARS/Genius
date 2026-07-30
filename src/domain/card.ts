@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { categoryNameSchema } from "./category.js";
 
 export const MAX_CARD_TEXT_LENGTH = 16_384;
 export const MAX_CARD_TAG_LENGTH = 128;
@@ -16,6 +17,9 @@ export type CardVisibility = z.infer<typeof visibilitySchema>;
 export const distilledCardSchema = z.object({
   domain: domainSchema,
   visibility: visibilitySchema,
+  // Shape validation only; membership in the controlled vocabulary is enforced
+  // against the card_categories table (DB trigger + API-level checks).
+  category: categoryNameSchema.nullable().default(null),
   situation: cardTextSchema,
   judgment: cardTextSchema,
   rationale: cardTextSchema,
@@ -43,9 +47,15 @@ export interface CreateCardInput extends DistilledCard {
   sourceTier: 1 | 2;
 }
 
+/** Caller identity recorded with card revisions (no authentication exists). */
+export const cardChangeOriginSchema = z.enum(["ui", "api", "cli"]);
+
+export type CardChangeOrigin = z.infer<typeof cardChangeOriginSchema>;
+
 export interface CardPatch {
   domain?: CardDomain;
   visibility?: CardVisibility;
+  category?: string | null;
   situation?: string;
   judgment?: string;
   rationale?: string;

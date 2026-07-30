@@ -4,6 +4,7 @@ export interface CloneCardRow {
   id: string;
   domain: "work" | "hobby";
   visibility: "public" | "sensitive";
+  category: string | null;
   situation: string;
   judgment: string;
   rationale: string;
@@ -37,6 +38,7 @@ export function mapCloneCardRow(row: CloneCardRow): CloneCard {
     id: row.id,
     domain: row.domain,
     visibility: row.visibility,
+    category: row.category,
     situation: row.situation,
     judgment: row.judgment,
     rationale: row.rationale,
@@ -54,6 +56,7 @@ export const CLONE_CARD_COLUMNS = `
   id,
   domain,
   visibility,
+  category,
   situation,
   judgment,
   rationale,

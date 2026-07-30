@@ -17,6 +17,8 @@ export interface QueryVectorPort {
     options: {
       domain?: QueryInput["domain"];
       visibility?: QueryInput["visibility"];
+      /** OR filter: only cards whose category is one of these values match. */
+      categories?: readonly string[];
       limit: number;
     },
   ): VectorCandidate[];
@@ -70,6 +72,7 @@ export class QueryService {
       const candidates = this.#vectors.search(vector, {
         ...(input.domain === undefined ? {} : { domain: input.domain }),
         ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
+        ...(input.categories === undefined ? {} : { categories: input.categories }),
         limit: input.k * 4,
       });
       const cards = candidates
@@ -85,6 +88,14 @@ function validateQueryInput(input: QueryInput): void {
   if (input.text.trim().length === 0) throw new Error("Query text must not be empty");
   if (!Number.isSafeInteger(input.k) || input.k <= 0 || input.k > 100) {
     throw new Error("Query k must be an integer from 1 through 100");
+  }
+  if (input.categories !== undefined) {
+    if (input.categories.length === 0) {
+      throw new Error("Query categories must not be an empty array");
+    }
+    if (input.categories.some((category) => category.trim() === "")) {
+      throw new Error("Query categories must not contain empty values");
+    }
   }
 }
 

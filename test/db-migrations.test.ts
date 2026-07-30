@@ -34,6 +34,8 @@ describe("database migrations", () => {
       expect.arrayContaining([
         "clone_cards",
         "clone_vec",
+        "card_categories",
+        "clone_card_revisions",
         "embedding_cache",
         "embedding_meta",
         "ingest_state",
@@ -52,9 +54,16 @@ describe("database migrations", () => {
         "idx_clone_cards_domain_visibility",
         "idx_clone_cards_source_ref",
         "idx_clone_cards_superseded_by",
+        "idx_clone_cards_category",
+        "idx_clone_card_revisions_card_id",
         "idx_embedding_meta_one_active",
       ]),
     );
+    const cardColumns = database
+      .prepare<[], { name: string }>("PRAGMA table_info('clone_cards')")
+      .all()
+      .map((column) => column.name);
+    expect(cardColumns).toContain("category");
     const cacheColumns = database
       .prepare<[], { name: string }>("PRAGMA table_info('embedding_cache')")
       .all()
@@ -65,6 +74,47 @@ describe("database migrations", () => {
       .all()
       .find((index) => index.name === "idx_clone_cards_source_ref");
     expect(sourceRefIndex?.unique).toBe(1);
+  });
+
+  it("seeds the initial controlled category vocabulary exactly once", () => {
+    const database = migratedMemoryDatabase();
+    expect(runMigrations(database)).toEqual([]);
+
+    const names = database
+      .prepare<[], { name: string }>("SELECT name FROM card_categories ORDER BY name")
+      .all()
+      .map((row) => row.name);
+    expect(names).toEqual([
+      "data-privacy",
+      "delegation",
+      "general",
+      "impl-design",
+      "ops-lifecycle",
+      "review",
+      "workflow",
+      "writing",
+    ]);
+  });
+
+  it("rejects clone_cards writes whose category is outside card_categories", () => {
+    const database = migratedMemoryDatabase();
+    const insert = database.prepare(
+      `INSERT INTO clone_cards(
+         id, domain, visibility, category, situation, judgment, rationale, tags,
+         source_ref, source_tier, confidence, superseded_by, created_at, updated_at
+       ) VALUES (?, 'work', 'sensitive', ?, 's', 'j', 'r', '[]', ?, 1, 0.5, NULL, 1, 1)`,
+    );
+
+    expect(() => insert.run("01CARD1", "not-a-category", "fixture:one")).toThrow(
+      /category must exist in card_categories/,
+    );
+    expect(() => insert.run("01CARD2", "impl-design", "fixture:two")).not.toThrow();
+    expect(() => insert.run("01CARD3", null, "fixture:three")).not.toThrow();
+    expect(() =>
+      database
+        .prepare("UPDATE clone_cards SET category = ? WHERE id = ?")
+        .run("still-not-a-category", "01CARD2"),
+    ).toThrow(/category must exist in card_categories/);
   });
 
   it("uses WAL for a file-backed database", () => {

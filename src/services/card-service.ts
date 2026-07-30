@@ -1,7 +1,17 @@
 import { ulid } from "ulid";
 import type { ListCardsInput, ManualCardInput } from "../api/contracts.js";
 import { CardRepository } from "../cards/card-repository.js";
-import { cardEmbeddingText, type CardPatch, type CloneCard, type CreateCardInput } from "../domain/card.js";
+import {
+  CardRevisionRepository,
+  type CardRevision,
+} from "../cards/card-revision-repository.js";
+import {
+  cardEmbeddingText,
+  type CardChangeOrigin,
+  type CardPatch,
+  type CloneCard,
+  type CreateCardInput,
+} from "../domain/card.js";
 import type { PublicCardGate } from "../distill/public-card-gate.js";
 import type { GeniusDatabase } from "../db/database.js";
 import type { EmbeddingClient } from "../embedding/types.js";
@@ -11,10 +21,27 @@ interface IdRow {
   id: string;
 }
 
+/**
+ * Raised when a sensitive→public promotion is re-checked by the public card
+ * gate and the gate still classifies the content as sensitive. The promotion
+ * is rejected outright instead of being silently downgraded, so the caller
+ * cannot mistake the card for published (spec/feature/operations.md Section 2).
+ */
+export class CardPromotionRejectedError extends Error {
+  constructor(cardId: string) {
+    super(`Card ${cardId} cannot be promoted to public: the sensitive check rejected it`);
+    this.name = "CardPromotionRejectedError";
+  }
+}
+
+/** clone_cards columns whose PATCH changes are recorded as a revision. */
+const REVISION_TRACKED_COLUMNS = ["domain", "visibility", "category"] as const;
+
 export class CardService {
   readonly #database: GeniusDatabase;
   readonly #cards: CardRepository;
   readonly #embedder: EmbeddingClient;
+  readonly #revisions: CardRevisionRepository;
   readonly #vectors: VectorStore;
   readonly #publicCardGate: PublicCardGate;
 
@@ -28,6 +55,7 @@ export class CardService {
     this.#database = database;
     this.#cards = cards;
     this.#embedder = embedder;
+    this.#revisions = new CardRevisionRepository(database);
     this.#vectors = vectors;
     this.#publicCardGate = publicCardGate;
   }
@@ -36,6 +64,7 @@ export class CardService {
     return this.#cards.list({
       ...(input.domain === undefined ? {} : { domain: input.domain }),
       ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
+      ...(input.category === undefined ? {} : { category: input.category }),
       ...(input.tag === undefined ? {} : { tag: input.tag }),
       ...(input.q === undefined ? {} : { query: input.q }),
       limit: input.limit,
@@ -109,18 +138,29 @@ export class CardService {
     }).immediate();
   }
 
-  async patch(id: string, patch: CardPatch): Promise<CloneCard | null> {
+  async patch(
+    id: string,
+    patch: CardPatch,
+    changedBy: CardChangeOrigin,
+  ): Promise<CloneCard | null> {
     const current = this.#cards.getById(id);
     if (!current) return null;
     const requested = this.#cards.preparePatch(current, patch);
+    const isPromotion =
+      current.visibility === "sensitive" && requested.visibility === "public";
     const shouldCheckPublic =
       requested.visibility === "public" &&
-      (current.visibility !== "public" ||
+      (isPromotion ||
         patch.situation !== undefined ||
         patch.judgment !== undefined ||
         patch.rationale !== undefined ||
         patch.tags !== undefined);
     const checked = shouldCheckPublic ? await this.#publicCardGate.check(requested) : requested;
+    // A promotion the gate flags is rejected, never silently downgraded.
+    // Demotions (public→sensitive) skip the gate and are always allowed.
+    if (isPromotion && checked.visibility !== "public") {
+      throw new CardPromotionRejectedError(id);
+    }
     const updated = { ...requested, ...checked };
     const shouldReembed =
       patch.situation !== undefined ||
@@ -133,9 +173,13 @@ export class CardService {
       ? (await this.#embedder.embed([cardEmbeddingText(updated)]))[0]
       : undefined;
     if (shouldReembed && !vector) throw new Error("Card embedder returned no vector for patch");
+    const changedFields = changedCardColumns(current, updated);
+    const shouldRecordRevision = REVISION_TRACKED_COLUMNS.some((column) =>
+      changedFields.includes(column));
     this.#database.transaction(() => {
       this.#cards.save(updated);
       if (vector) this.#vectors.upsert(updated.id, vector);
+      if (shouldRecordRevision) this.#revisions.record(id, changedFields, changedBy);
     })();
     return updated;
   }
@@ -159,6 +203,10 @@ export class CardService {
     return row ? this.#cards.requireById(row.id) : null;
   }
 
+  listRevisions(cardId: string): CardRevision[] {
+    return this.#revisions.listByCard(cardId);
+  }
+
   #linkSuperseded(cardId: string, replacementId: string): void {
     const replacement = this.#cards.getById(replacementId);
     if (!replacement) throw new Error(`Replacement card not found: ${replacementId}`);
@@ -171,4 +219,23 @@ export class CardService {
     }
     this.#cards.update(cardId, { supersededBy: replacementId });
   }
+}
+
+/**
+ * Returns the clone_cards column names whose values differ between two card
+ * states. Only names are returned — the revision trail must never carry card
+ * content (spec/feature/operations.md Section 2).
+ */
+function changedCardColumns(before: CloneCard, after: CloneCard): string[] {
+  const changed: string[] = [];
+  if (before.domain !== after.domain) changed.push("domain");
+  if (before.visibility !== after.visibility) changed.push("visibility");
+  if (before.category !== after.category) changed.push("category");
+  if (before.situation !== after.situation) changed.push("situation");
+  if (before.judgment !== after.judgment) changed.push("judgment");
+  if (before.rationale !== after.rationale) changed.push("rationale");
+  if (JSON.stringify(before.tags) !== JSON.stringify(after.tags)) changed.push("tags");
+  if (before.confidence !== after.confidence) changed.push("confidence");
+  if (before.supersededBy !== after.supersededBy) changed.push("superseded_by");
+  return changed;
 }

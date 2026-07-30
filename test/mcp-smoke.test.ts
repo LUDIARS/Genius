@@ -11,6 +11,7 @@ const CARD = {
   id: "01J00000000000000000000000",
   domain: "work",
   visibility: "public",
+  category: "impl-design",
   situation: "A decision is needed",
   judgment: "Choose the reversible option",
   rationale: "It preserves information",
@@ -27,6 +28,7 @@ const CARD = {
 const SAFE_CARD = {
   domain: CARD.domain,
   visibility: CARD.visibility,
+  category: CARD.category,
   situation: CARD.situation,
   judgment: CARD.judgment,
   rationale: CARD.rationale,

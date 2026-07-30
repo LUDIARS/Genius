@@ -6,8 +6,11 @@ import { z } from "zod";
 import { GeniusHttpClient } from "./client/genius-http-client.js";
 import { resolveGeniusBaseUrl } from "./client/base-url.js";
 import { CardRepository } from "./cards/card-repository.js";
+import { CategoryRepository } from "./categories/category-repository.js";
 import { loadConfig, type LoadConfigOptions } from "./config/load-config.js";
+import { createDistillLlm } from "./distill/create-distill-llm.js";
 import { domainSchema, visibilitySchema } from "./domain/card.js";
+import { categoryNameSchema } from "./domain/category.js";
 import { openConfiguredDatabase } from "./db/database.js";
 import { runMigrations } from "./db/migrate.js";
 import { EmbeddingCache } from "./embedding/cache.js";
@@ -16,6 +19,7 @@ import { OllamaEmbeddingClient } from "./embedding/ollama-client.js";
 import { ReembedService } from "./embedding/reembed.js";
 import { VectorStore } from "./embedding/vector-store.js";
 import { sourceNameSchema, type SourceName } from "./readers/source-reader.js";
+import { CategorizeBackfillService } from "./services/categorize-backfill.js";
 
 const ingestStartSchema = z.object({ id: z.string().min(1), status: z.literal("running") });
 
@@ -48,6 +52,8 @@ export async function runCli(
       return runStats(argv.slice(1), baseUrl, fetchImplementation, stdout);
     case "reembed":
       return runReembed(argv.slice(1), config, fetchImplementation, stdout);
+    case "categorize":
+      return runCategorize(argv.slice(1), config, stdout);
     default:
       throw new Error(`Unknown command: ${command}\n${usage()}`);
   }
@@ -66,11 +72,15 @@ async function runQuery(
     options: {
       domain: { type: "string" },
       visibility: { type: "string" },
+      categories: { type: "string" },
       k: { type: "string", short: "k", default: "8" },
     },
   });
   if (parsed.positionals.length !== 1) throw new Error("query requires exactly one text argument");
   const k = positiveInteger(parsed.values.k, "k", 100);
+  const categories = parsed.values.categories === undefined
+    ? undefined
+    : parseCategories(parsed.values.categories);
   const client = new GeniusHttpClient({ baseUrl, fetch: fetchImplementation });
   const result = await client.query({
     text: parsed.positionals[0]!,
@@ -78,6 +88,7 @@ async function runQuery(
     ...(parsed.values.visibility === undefined
       ? {}
       : { visibility: visibilitySchema.parse(parsed.values.visibility) }),
+    ...(categories === undefined ? {} : { categories }),
     k,
   });
   stdout(`${JSON.stringify(result, null, 2)}\n`);
@@ -186,6 +197,39 @@ async function runReembed(
   }
 }
 
+async function runCategorize(
+  args: readonly string[],
+  config: ReturnType<typeof loadConfig>,
+  stdout: (text: string) => void,
+): Promise<number> {
+  const parsed = parseArgs({
+    args: [...args],
+    allowPositionals: false,
+    strict: true,
+    options: { missing: { type: "boolean", default: false } },
+  });
+  if (!parsed.values.missing) {
+    throw new Error("categorize requires --missing (only the backfill mode exists)");
+  }
+  const database = openConfiguredDatabase(config);
+  try {
+    runMigrations(database);
+    const llm = createDistillLlm(config);
+    await llm.assertReady();
+    const service = new CategorizeBackfillService({
+      categories: new CategoryRepository(database).listSync(),
+      database,
+      llm,
+      stdout,
+    });
+    const result = await service.run();
+    stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  } finally {
+    database.close();
+  }
+}
+
 async function requestJson(
   url: URL,
   fetchImplementation: typeof globalThis.fetch,
@@ -201,6 +245,12 @@ async function requestJson(
   } catch (error) {
     throw new Error("Genius API returned invalid JSON", { cause: error });
   }
+}
+
+function parseCategories(raw: string): string[] {
+  const values = raw.split(",").map((value) => value.trim()).filter(Boolean);
+  if (values.length === 0) throw new Error("--categories must contain at least one category");
+  return [...new Set(values.map((value) => categoryNameSchema.parse(value)))];
 }
 
 function parseSources(raw: string): SourceName[] {
@@ -225,10 +275,13 @@ function positiveInteger(raw: string | undefined, name: string, maximum?: number
 function usage(): string {
   return [
     "Usage:",
-    '  genius query "<text>" [--domain work|hobby] [--visibility public|sensitive] [-k 8]',
-    "  genius ingest [--sources memory,review] [--tier2 [--budget-files 500]] [--allow-missing] [--retry-failed]",
+    '  genius query "<text>" [--domain work|hobby] [--visibility public|sensitive]' +
+      " [--categories a,b] [-k 8]",
+    "  genius ingest [--sources memory,review] [--tier2 [--budget-files 500]] [--allow-missing]" +
+      " [--retry-failed]",
     "  genius stats",
     "  genius reembed --model <name>",
+    "  genius categorize --missing   # backfill categories for cards without one",
     "",
   ].join("\n");
 }

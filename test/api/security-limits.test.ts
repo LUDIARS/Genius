@@ -20,6 +20,11 @@ const services: ApiServices = {
     async create() { throw new Error("create must not run for rejected input"); },
     async patch() { throw new Error("patch must not run for rejected input"); },
   },
+  categories: {
+    async list() { return []; },
+    async create() { throw new Error("category create must not run for rejected input"); },
+    async findUnknown() { return []; },
+  },
   ingest: {
     start() { throw new Error("ingest must not run for rejected input"); },
     status() { return null; },

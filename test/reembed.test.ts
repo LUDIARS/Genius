@@ -42,6 +42,7 @@ describe("ReembedService", () => {
     const first = cards.create({
       domain: "work",
       visibility: "public",
+      category: null,
       situation: "first situation",
       judgment: "first judgment",
       rationale: "first rationale",
@@ -53,6 +54,7 @@ describe("ReembedService", () => {
     const second = cards.create({
       domain: "work",
       visibility: "sensitive",
+      category: null,
       situation: "second situation",
       judgment: "second judgment",
       rationale: "second rationale",

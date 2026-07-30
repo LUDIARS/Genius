@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { renderDistillPrompt } from "../../src/distill/category-vocabulary.js";
 import { distilledCardSchema } from "../../src/domain/card.js";
 
 // Guardrail for prompts/distill.md: the prompt file is the single source of truth
@@ -65,10 +66,29 @@ describe("prompts/distill.md calibration", () => {
       "tags",
       "domain",
       "visibility",
+      "category",
       "confidence",
     ]) {
       expect(promptText).toContain(`\`${field}\``);
     }
+  });
+
+  it("carries the category vocabulary placeholder instead of a hardcoded list", () => {
+    // The controlled vocabulary's source of truth is the card_categories table;
+    // the prompt must only ship the placeholder that gets filled at startup
+    // (spec/feature/operations.md Section 1.1).
+    expect(promptText).toContain("{{category-vocabulary}}");
+    expect(renderDistillPrompt(promptText, [
+      { name: "impl-design", description: "implementation judgments", createdAt: 1 },
+    ])).toContain("- `impl-design` — implementation judgments");
+  });
+
+  it("renders operator-supplied descriptions literally, without replacement patterns", () => {
+    // Descriptions come from POST /api/clone/categories, so `$&` / `$$` in one
+    // must reach the prompt verbatim rather than expand as a replacement pattern.
+    expect(renderDistillPrompt(promptText, [
+      { name: "budget", description: "costs in $$ and $& terms", createdAt: 1 },
+    ])).toContain("- `budget` — costs in $$ and $& terms");
   });
 
   it("instructs raw JSON only, with no Markdown fences in the model's real output", () => {

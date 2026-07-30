@@ -1,16 +1,19 @@
 import type { Hono } from "hono";
 import { z } from "zod";
 import { domainSchema, visibilitySchema } from "../../domain/card.js";
+import { categoryNameSchema } from "../../domain/category.js";
 import type { ApiServices } from "../contracts.js";
-import { parseOrThrow, readJsonOrThrow } from "../validation.js";
+import { assertKnownCategories, parseOrThrow, readJsonOrThrow } from "../validation.js";
 
 const MAX_BATCH_QUERIES = 50;
+const MAX_QUERY_CATEGORIES = 32;
 
 const querySchema = z
   .object({
     text: z.string().trim().min(1).max(100_000),
     domain: domainSchema.optional(),
     visibility: visibilitySchema.optional(),
+    categories: z.array(categoryNameSchema).min(1).max(MAX_QUERY_CATEGORIES).optional(),
     k: z.number().int().min(1).max(100).default(8),
   })
   .strict();
@@ -21,9 +24,14 @@ const batchQuerySchema = z
   })
   .strict();
 
-export function registerQueryRoute(app: Hono, query: ApiServices["query"]): void {
+export function registerQueryRoute(
+  app: Hono,
+  query: ApiServices["query"],
+  categories: ApiServices["categories"],
+): void {
   app.post("/api/clone/query", async (c) => {
     const input = parseOrThrow(querySchema, await readJsonOrThrow(c));
+    await assertKnownCategories(categories, input.categories ?? []);
     return c.json(await query.query(input));
   });
 
@@ -34,6 +42,10 @@ export function registerQueryRoute(app: Hono, query: ApiServices["query"]): void
   // single-query traffic into artificial batches.
   app.post("/api/clone/query-batch", async (c) => {
     const input = parseOrThrow(batchQuerySchema, await readJsonOrThrow(c));
+    await assertKnownCategories(
+      categories,
+      input.queries.flatMap((entry) => entry.categories ?? []),
+    );
     const results = await query.queryMany(input.queries);
     return c.json({ results });
   });

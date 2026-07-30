@@ -89,7 +89,11 @@ function modelForPurpose(
   model: string,
   sensitiveCheckModel: string,
 ): string {
-  return purpose === "sensitive-check" ? sensitiveCheckModel : model;
+  // categorize (backfill classification) rides the cheap sensitive-check model:
+  // it is a low-stakes single-label task over already-distilled card text.
+  return purpose === "sensitive-check" || purpose === "categorize"
+    ? sensitiveCheckModel
+    : model;
 }
 
 function assertClaudeExecutable(

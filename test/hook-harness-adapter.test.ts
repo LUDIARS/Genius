@@ -13,6 +13,7 @@ const HOOK_CARD = {
   id: "card-1",
   domain: "work",
   visibility: "public",
+  category: "workflow",
   situation: "A decision is needed",
   judgment: "Prefer reversible steps",
   rationale: "It preserves information",

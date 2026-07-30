@@ -13,6 +13,7 @@ const HOOK_CARD = {
   id: "card-1",
   domain: "work",
   visibility: "public",
+  category: "workflow",
   situation: "A decision is needed",
   judgment: "Prefer reversible steps",
   rationale: "It preserves information",
@@ -93,6 +94,73 @@ describe("genius-supply hook", () => {
     expect(result.stdout).not.toContain("private-project");
     expect(result.stdout).toMatch(/\n\[\/genius-supply\]\n$/);
     expect(requestBody).toEqual({ text: "Help me decide", visibility: "public" });
+  });
+
+  it("accepts a JSON stdin payload and forwards its categories to the query", async () => {
+    let requestBody: unknown;
+    httpServer = createServer(async (request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      for await (const chunk of request) body += chunk;
+      requestBody = JSON.parse(body) as unknown;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ cards: [HOOK_CARD], tookMs: 2 }));
+    });
+    const port = await listen(httpServer);
+
+    const result = await runHook(
+      JSON.stringify({ prompt: "Help me decide", categories: ["workflow", "impl-design"] }),
+      `http://127.0.0.1:${port}`,
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain('"judgment": "Prefer reversible steps"');
+    expect(requestBody).toEqual({
+      text: "Help me decide",
+      visibility: "public",
+      categories: ["workflow", "impl-design"],
+    });
+  });
+
+  it("rejects a JSON stdin payload with a bad shape instead of querying with it", async () => {
+    const missingPrompt = await runHook(
+      JSON.stringify({ categories: ["workflow"] }),
+      "http://127.0.0.1:9",
+    );
+    const badCategories = await runHook(
+      JSON.stringify({ prompt: "decide", categories: "workflow" }),
+      "http://127.0.0.1:9",
+    );
+    const unknownKey = await runHook(
+      JSON.stringify({ prompt: "decide", catgories: ["workflow"] }),
+      "http://127.0.0.1:9",
+    );
+
+    expect(missingPrompt.code).toBe(1);
+    expect(missingPrompt.stderr).toContain("non-empty string prompt");
+    expect(badCategories.code).toBe(1);
+    expect(badCategories.stderr).toContain("categories must be a non-empty array");
+    expect(unknownKey.code).toBe(1);
+    expect(unknownKey.stderr).toContain("unknown keys: catgories");
+  });
+
+  it("treats non-JSON stdin starting with a brace as a plain-text prompt", async () => {
+    let requestBody: unknown;
+    httpServer = createServer(async (request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      for await (const chunk of request) body += chunk;
+      requestBody = JSON.parse(body) as unknown;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ cards: [], tookMs: 1 }));
+    });
+    const port = await listen(httpServer);
+
+    const result = await runHook("{ not json, just a prompt", `http://127.0.0.1:${port}`);
+
+    expect(result.code).toBe(0);
+    expect(requestBody).toEqual({ text: "{ not json, just a prompt", visibility: "public" });
   });
 
   it("escapes bracket delimiters in untrusted returned card text", async () => {

@@ -42,15 +42,59 @@ function escapeMarkerBrackets(value) {
   return value;
 }
 
+/**
+ * Parses hook stdin. A JSON object payload ({"prompt": "...", "categories":
+ * [...]}) selects category-filtered supply; any other input is treated as a
+ * plain-text prompt for backward compatibility. A parseable JSON object with
+ * a bad shape is an error, not plain text — silently querying with a
+ * serialized JSON blob as the prompt would hide the caller's mistake.
+ */
+export function parseHookInput(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed) throw new Error("stdin prompt must not be empty");
+  if (!trimmed.startsWith("{")) return { prompt: trimmed };
+
+  let decoded;
+  try {
+    decoded = JSON.parse(trimmed);
+  } catch {
+    // Not JSON after all -- treat it as a plain-text prompt that happens to
+    // start with a brace.
+    return { prompt: trimmed };
+  }
+  if (decoded === null || typeof decoded !== "object" || Array.isArray(decoded)) {
+    return { prompt: trimmed };
+  }
+  const unknownKeys = Object.keys(decoded).filter((key) => key !== "prompt" && key !== "categories");
+  if (unknownKeys.length > 0) {
+    throw new Error(`stdin JSON contains unknown keys: ${unknownKeys.join(", ")}`);
+  }
+  if (typeof decoded.prompt !== "string" || decoded.prompt.trim() === "") {
+    throw new Error("stdin JSON must contain a non-empty string prompt");
+  }
+  const result = { prompt: decoded.prompt.trim() };
+  if (decoded.categories !== undefined) {
+    if (
+      !Array.isArray(decoded.categories) ||
+      decoded.categories.length === 0 ||
+      decoded.categories.some((category) => typeof category !== "string" || category.trim() === "")
+    ) {
+      throw new Error("stdin JSON categories must be a non-empty array of non-empty strings");
+    }
+    result.categories = decoded.categories.map((category) => category.trim());
+  }
+  return result;
+}
+
 export async function runGeniusSupply(options = {}) {
   const stdin = options.stdin ?? process.stdin;
   const stdout = options.stdout ?? process.stdout;
-  const prompt = (await readUtf8(stdin)).trim();
-  if (!prompt) throw new Error("stdin prompt must not be empty");
+  const input = parseHookInput(await readUtf8(stdin));
 
-  const cards = await queryGeniusForHook(prompt, {
+  const cards = await queryGeniusForHook(input.prompt, {
     env: options.env,
     fetchImplementation: options.fetchImplementation,
+    ...(input.categories === undefined ? {} : { categories: input.categories }),
   });
   stdout.write(formatGeniusSupply(cards));
 }

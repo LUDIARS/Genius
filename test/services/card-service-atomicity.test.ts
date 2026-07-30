@@ -148,6 +148,7 @@ function card(overrides: Partial<DistilledCard> = {}): DistilledCard {
   return {
     domain: "work",
     visibility: "sensitive",
+    category: null,
     situation: "When two options are viable",
     judgment: "Prefer the reversible option",
     rationale: "It preserves information",

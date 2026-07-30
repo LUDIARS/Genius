@@ -49,7 +49,11 @@ export async function queryGeniusForHook(text, options = {}) {
         accept: "application/json",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ text, visibility: "public" }),
+      body: JSON.stringify({
+        text,
+        visibility: "public",
+        ...(options.categories === undefined ? {} : { categories: options.categories }),
+      }),
       redirect: "error",
     });
   } catch (error) {
@@ -83,6 +87,9 @@ function projectPublicCard(value, index) {
   if (value.domain !== "work" && value.domain !== "hobby") {
     throw new Error(`Genius query card ${index} has an invalid domain`);
   }
+  if (value.category !== null && typeof value.category !== "string") {
+    throw new Error(`Genius query card ${index} has an invalid category`);
+  }
   const situation = requireString(value.situation, index, "situation");
   const judgment = requireString(value.judgment, index, "judgment");
   const rationale = requireString(value.rationale, index, "rationale");
@@ -98,6 +105,7 @@ function projectPublicCard(value, index) {
   return {
     domain: value.domain,
     visibility: value.visibility,
+    category: value.category,
     situation,
     judgment,
     rationale,

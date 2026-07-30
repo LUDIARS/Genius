@@ -5,12 +5,18 @@ import {
   domainSchema,
   visibilitySchema,
 } from "../domain/card.js";
+import { categoryNameSchema } from "../domain/category.js";
 
 export const geniusQueryInputSchema = z
   .object({
     text: z.string().trim().min(1).max(100_000),
     domain: domainSchema.optional(),
     visibility: visibilitySchema.optional(),
+    /**
+     * OR filter over controlled-vocabulary category names. The server rejects
+     * unknown categories with HTTP 400.
+     */
+    categories: z.array(categoryNameSchema).min(1).max(32).optional(),
     k: z.number().int().min(1).max(100).optional(),
   })
   .strict();
@@ -22,6 +28,7 @@ export const scoredCardSchema = z
     id: z.string().min(1),
     domain: domainSchema,
     visibility: visibilitySchema,
+    category: categoryNameSchema.nullable(),
     situation: cardTextSchema,
     judgment: cardTextSchema,
     rationale: cardTextSchema,
@@ -59,6 +66,7 @@ export const publicSuppliedCardSchema = z
   .object({
     domain: domainSchema,
     visibility: z.literal("public"),
+    category: categoryNameSchema.nullable(),
     situation: cardTextSchema,
     judgment: cardTextSchema,
     rationale: cardTextSchema,
@@ -88,6 +96,7 @@ export function toPublicGeniusQueryResult(result: GeniusQueryResult): PublicGeni
       return {
         domain: card.domain,
         visibility: card.visibility,
+        category: card.category,
         situation: card.situation,
         judgment: card.judgment,
         rationale: card.rationale,

@@ -1,4 +1,5 @@
 import type {
+  CardChangeOrigin,
   CardDomain,
   CardPatch,
   CardVisibility,
@@ -6,6 +7,7 @@ import type {
   DistilledCard,
   ScoredCloneCard,
 } from "../domain/card.js";
+import type { CardCategory, CreateCategoryInput } from "../domain/category.js";
 import type { IngestOptions, IngestRunRecord } from "../ingest/ingest-contracts.js";
 import type { SourceName } from "../readers/source-reader.js";
 
@@ -20,6 +22,8 @@ export interface QueryInput {
   text: string;
   domain?: CardDomain;
   visibility?: CardVisibility;
+  /** OR filter over controlled-vocabulary categories. Unset = all categories. */
+  categories?: string[];
   k: number;
 }
 
@@ -31,6 +35,7 @@ export interface QueryResult {
 export interface ListCardsInput {
   domain?: CardDomain;
   visibility?: CardVisibility;
+  category?: string;
   tag?: string;
   q?: string;
   limit: number;
@@ -56,6 +61,7 @@ export interface PublicExportCard {
   id: string;
   domain: CardDomain;
   visibility: "public";
+  category: string | null;
   situation: string;
   judgment: string;
   rationale: string;
@@ -77,7 +83,13 @@ export interface ApiServices {
     list(input: ListCardsInput): Promise<CloneCard[]>;
     get(id: string): Promise<CloneCard | null>;
     create(input: ManualCardInput): Promise<CloneCard>;
-    patch(id: string, patch: CardPatch): Promise<CloneCard | null>;
+    patch(id: string, patch: CardPatch, changedBy: CardChangeOrigin): Promise<CloneCard | null>;
+  };
+  categories: {
+    list(): Promise<CardCategory[]>;
+    create(input: CreateCategoryInput): Promise<CardCategory>;
+    /** Returns the input names that are outside the controlled vocabulary. */
+    findUnknown(names: readonly string[]): Promise<string[]>;
   };
   ingest: {
     start(options: IngestOptions): IngestRunRecord;
@@ -86,6 +98,6 @@ export interface ApiServices {
   };
   stats: {
     get(): Promise<CloneStats>;
-    exportPublic(): Promise<PublicExportCard[]>;
+    exportPublic(category?: string): Promise<PublicExportCard[]>;
   };
 }

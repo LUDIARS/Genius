@@ -98,6 +98,7 @@ describe("incremental ingest", () => {
           await cardService.saveWithEmbedding({
             domain: "work",
             visibility: "public",
+            category: null,
             situation: "A choice is available",
             judgment: "Choose the reversible action",
             rationale: "It preserves information",

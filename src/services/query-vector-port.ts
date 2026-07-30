@@ -38,6 +38,17 @@ export class SqliteQueryVectorPort implements QueryVectorPort {
       clauses.push("cards.visibility = ?");
       parameters.push(visibilitySchema.parse(options.visibility));
     }
+    if (options.categories !== undefined) {
+      if (options.categories.length === 0) {
+        throw new Error("Query categories filter must not be empty");
+      }
+      const placeholders = options.categories.map(() => "?").join(", ");
+      clauses.push(`cards.category IN (${placeholders})`);
+      for (const category of options.categories) {
+        if (category.trim() === "") throw new Error("Query category must not be empty");
+        parameters.push(category);
+      }
+    }
     const columns = CLONE_CARD_COLUMNS.split(",")
       .map((column) => `cards.${column.trim()}`)
       .join(", ");

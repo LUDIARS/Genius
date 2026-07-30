@@ -22,6 +22,7 @@ export interface CardRepositoryOptions {
 export interface CardListFilters {
   domain?: "work" | "hobby";
   visibility?: "public" | "sensitive";
+  category?: string;
   tag?: string;
   query?: string;
   limit?: number;
@@ -102,14 +103,15 @@ export class CardRepository {
     this.#database
       .prepare(
         `INSERT INTO clone_cards(
-          id, domain, visibility, situation, judgment, rationale, tags,
+          id, domain, visibility, category, situation, judgment, rationale, tags,
           source_ref, source_tier, confidence, superseded_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         normalized.id,
         normalized.domain,
         normalized.visibility,
+        normalized.category,
         normalized.situation,
         normalized.judgment,
         normalized.rationale,
@@ -129,14 +131,15 @@ export class CardRepository {
     const result = this.#database
       .prepare(
         `UPDATE clone_cards SET
-          domain = ?, visibility = ?, situation = ?, judgment = ?, rationale = ?,
-          tags = ?, source_ref = ?, source_tier = ?, confidence = ?,
+          domain = ?, visibility = ?, category = ?, situation = ?, judgment = ?,
+          rationale = ?, tags = ?, source_ref = ?, source_tier = ?, confidence = ?,
           superseded_by = ?, created_at = ?, updated_at = ?
         WHERE id = ?`,
       )
       .run(
         normalized.domain,
         normalized.visibility,
+        normalized.category,
         normalized.situation,
         normalized.judgment,
         normalized.rationale,
@@ -176,6 +179,7 @@ export class CardRepository {
     const distilled = distilledCardSchema.parse({
       domain,
       visibility,
+      category: patch.category === undefined ? card.category : patch.category,
       situation: patch.situation ?? card.situation,
       judgment: patch.judgment ?? card.judgment,
       rationale: patch.rationale ?? card.rationale,
@@ -215,6 +219,12 @@ export class CardRepository {
     if (filters.visibility !== undefined) {
       clauses.push("visibility = ?");
       parameters.push(visibilitySchema.parse(filters.visibility));
+    }
+    if (filters.category !== undefined) {
+      const category = filters.category.trim();
+      if (category === "") throw new Error("category must not be empty");
+      clauses.push("category = ?");
+      parameters.push(category);
     }
     if (!filters.includeSuperseded) clauses.push("superseded_by IS NULL");
     if (filters.tag !== undefined) {

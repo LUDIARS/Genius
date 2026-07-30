@@ -33,6 +33,7 @@ describe("VectorStore", () => {
     const work = cards.create({
       domain: "work",
       visibility: "public",
+      category: null,
       situation: "work situation",
       judgment: "work judgment",
       rationale: "work rationale",
@@ -44,6 +45,7 @@ describe("VectorStore", () => {
     const hobby = cards.create({
       domain: "hobby",
       visibility: "public",
+      category: null,
       situation: "hobby situation",
       judgment: "hobby judgment",
       rationale: "hobby rationale",
@@ -70,6 +72,7 @@ describe("VectorStore", () => {
     const first = cards.create({
       domain: "work",
       visibility: "sensitive",
+      category: null,
       situation: "first situation",
       judgment: "first judgment",
       rationale: "first rationale",
@@ -81,6 +84,7 @@ describe("VectorStore", () => {
     const second = cards.create({
       domain: "work",
       visibility: "sensitive",
+      category: null,
       situation: "second situation",
       judgment: "second judgment",
       rationale: "second rationale",
@@ -101,6 +105,7 @@ describe("VectorStore", () => {
     const card = cards.create({
       domain: "work",
       visibility: "public",
+      category: null,
       situation: "situation",
       judgment: "judgment",
       rationale: "rationale",

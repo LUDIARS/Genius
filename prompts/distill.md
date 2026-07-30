@@ -10,7 +10,16 @@ exactly these fields:
 - `tags` (string array): 1-6 short lowercase keywords (kebab-case), no duplicates.
 - `domain`: `"work"` or `"hobby"`.
 - `visibility`: `"public"` or `"sensitive"`.
+- `category`: exactly one category name from the controlled vocabulary below.
 - `confidence`: a plain number from 0 through 1 (not a string).
+
+## Category (controlled vocabulary)
+
+Choose the single best-fitting `category` for each card from this list. The list is
+generated at runtime from the category table -- never invent a value that is not
+listed here. If no category clearly fits, use `general`.
+
+{{category-vocabulary}}
 
 ## What counts as a card
 
@@ -59,6 +68,9 @@ object, no trailing text.
 
 ## Examples (synthetic, illustrative only -- never copy their content into real output)
 
+The `category` values shown in the examples are illustrations; always pick from the
+runtime-generated vocabulary list above.
+
 The fenced code blocks below are illustration only. Your own reply is always the bare
 `{ "cards": [...] }` envelope with no fences.
 
@@ -83,6 +95,7 @@ Output:
       "tags": ["testing", "database", "schema-migration"],
       "domain": "work",
       "visibility": "public",
+      "category": "impl-design",
       "confidence": 0.9
     }
   ]
@@ -109,6 +122,7 @@ Output:
       "tags": ["writing", "voice", "editorial"],
       "domain": "hobby",
       "visibility": "public",
+      "category": "writing",
       "confidence": 0.8
     }
   ]
@@ -136,6 +150,7 @@ Output:
       "tags": ["rollout", "risk", "scheduling"],
       "domain": "work",
       "visibility": "sensitive",
+      "category": "ops-lifecycle",
       "confidence": 0.75
     }
   ]

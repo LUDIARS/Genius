@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/api/app.js";
 import type { ApiServices, QueryInput } from "../../src/api/contracts.js";
 import { CardRepository } from "../../src/cards/card-repository.js";
+import { CategoryRepository } from "../../src/categories/category-repository.js";
 import { ingestRunViewSchema } from "../../src/client/ingest-run-contract.js";
 import { openDatabase, type GeniusDatabase } from "../../src/db/database.js";
 import { runMigrations } from "../../src/db/migrate.js";
@@ -91,6 +92,7 @@ describe("clone API", () => {
       health: new HealthService(cards, embedder),
       query,
       cards,
+      categories: new CategoryRepository(database),
       ingest: {
         start: (options) => {
           ingestOptions = options;
@@ -402,14 +404,186 @@ describe("clone API", () => {
     expect(ingestOptions).toBeNull();
   });
 
+  it("filters queries by controlled-vocabulary categories and rejects unknown values", async () => {
+    const filed = await createCard("work", "public", "alpha filed", "fixture:filed", 1, "impl-design");
+    await createCard("work", "public", "alpha other", "fixture:other", 1, "writing");
+    await createCard("work", "public", "alpha blank", "fixture:blank");
+    const app = createApp(services);
+
+    const filtered = await app.request("/api/clone/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "alpha", categories: ["impl-design", "review"], k: 10 }),
+    });
+    const filteredBody = (await filtered.json()) as { cards: Array<{ id: string }> };
+    const unknown = await app.request("/api/clone/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "alpha", categories: ["not-a-category"] }),
+    });
+    const unknownBatch = await app.request("/api/clone/query-batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ queries: [{ text: "alpha", categories: ["not-a-category"] }] }),
+    });
+    const emptyCategories = await app.request("/api/clone/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "alpha", categories: [] }),
+    });
+
+    expect(filtered.status).toBe(200);
+    expect(filteredBody.cards.map((card) => card.id)).toEqual([filed.id]);
+    expect(unknown.status).toBe(400);
+    await expect(unknown.json()).resolves.toEqual({ error: "Unknown categories: not-a-category" });
+    expect(unknownBatch.status).toBe(400);
+    expect(emptyCategories.status).toBe(400);
+  });
+
+  it("filters card list and public export by category", async () => {
+    const filed = await createCard("work", "public", "alpha filed", "fixture:filed", 1, "impl-design");
+    await createCard("work", "public", "alpha other", "fixture:other", 1, "writing");
+    const app = createApp(services);
+
+    const listResponse = await app.request("/api/clone/cards?category=impl-design");
+    const listed = (await listResponse.json()) as { cards: Array<{ id: string }> };
+    const unknownList = await app.request("/api/clone/cards?category=not-a-category");
+    const exportResponse = await app.request("/api/clone/export?visibility=public&category=impl-design");
+    const exported = (await exportResponse.json()) as { cards: Array<{ id: string; category: string }> };
+    const unknownExport = await app.request("/api/clone/export?visibility=public&category=not-a-category");
+
+    expect(listResponse.status).toBe(200);
+    expect(listed.cards.map((card) => card.id)).toEqual([filed.id]);
+    expect(unknownList.status).toBe(400);
+    expect(exportResponse.status).toBe(200);
+    expect(exported.cards.map((card) => card.id)).toEqual([filed.id]);
+    expect(exported.cards[0]?.category).toBe("impl-design");
+    expect(unknownExport.status).toBe(400);
+  });
+
+  it("lists seeded categories and creates new ones without exposing DELETE", async () => {
+    const app = createApp(services);
+
+    const listResponse = await app.request("/api/clone/categories");
+    const listed = (await listResponse.json()) as { categories: Array<{ name: string }> };
+    const created = await app.request("/api/clone/categories", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "gamedev", description: "Game design judgments" }),
+    });
+    const duplicate = await app.request("/api/clone/categories", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "gamedev", description: "Duplicate" }),
+    });
+    const card = await createCard("work", "public", "alpha game", "fixture:game", 1, "gamedev");
+
+    expect(listResponse.status).toBe(200);
+    expect(listed.categories.map((category) => category.name)).toContain("general");
+    expect(listed.categories.map((category) => category.name)).toContain("ops-lifecycle");
+    expect(created.status).toBe(201);
+    expect(duplicate.status).toBe(409);
+    expect(card.category).toBe("gamedev");
+    expect(
+      (await app.request("/api/clone/categories", { method: "DELETE" })).status,
+    ).toBe(404);
+  });
+
+  it("rejects a sensitive-to-public promotion the gate still flags with 409", async () => {
+    const flagged = await createCard(
+      "work",
+      "sensitive",
+      "private-marker content",
+      "fixture:flagged-promotion",
+    );
+    const app = createApp(services);
+
+    const rejected = await app.request(`/api/clone/cards/${flagged.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ visibility: "public" }),
+    });
+    const body = (await rejected.json()) as { error: string };
+    const unchanged = await (await app.request(`/api/clone/cards/${flagged.id}`)).json() as {
+      visibility: string;
+    };
+
+    expect(rejected.status).toBe(409);
+    expect(body.error).toContain("cannot be promoted to public");
+    expect(unchanged.visibility).toBe("sensitive");
+    expect(database.prepare("SELECT count(*) AS count FROM clone_card_revisions").get()).toEqual({
+      count: 0,
+    });
+  });
+
+  it("records quadrant and category patches in clone_card_revisions without content", async () => {
+    const card = await createCard("work", "sensitive", "audited", "fixture:audited");
+    const app = createApp(services);
+
+    const domainPatch = await app.request(`/api/clone/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ domain: "hobby", changedBy: "cli" }),
+    });
+    const categoryPatch = await app.request(`/api/clone/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ category: "workflow" }),
+    });
+    const textOnlyPatch = await app.request(`/api/clone/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rationale: "updated rationale" }),
+    });
+    const unknownCategoryPatch = await app.request(`/api/clone/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ category: "not-a-category" }),
+    });
+    const revisions = database
+      .prepare<[string], { changed_fields: string; changed_by: string }>(
+        "SELECT changed_fields, changed_by FROM clone_card_revisions WHERE card_id = ? ORDER BY id ASC",
+      )
+      .all(card.id);
+
+    expect(domainPatch.status).toBe(200);
+    expect(categoryPatch.status).toBe(200);
+    expect(textOnlyPatch.status).toBe(200);
+    expect(unknownCategoryPatch.status).toBe(400);
+    expect(revisions).toEqual([
+      { changed_fields: '["domain"]', changed_by: "cli" },
+      { changed_fields: '["category"]', changed_by: "api" },
+    ]);
+    for (const revision of revisions) {
+      expect(revision.changed_fields).not.toContain("audited");
+    }
+    // The decoded read path is the only way the trail is inspectable, so it is
+    // asserted alongside the raw rows (spec/feature/operations.md Section 2).
+    expect(
+      cards.listRevisions(card.id).map((revision) => ({
+        changedFields: revision.changedFields,
+        changedBy: revision.changedBy,
+      })),
+    ).toEqual([
+      { changedFields: ["domain"], changedBy: "cli" },
+      { changedFields: ["category"], changedBy: "api" },
+    ]);
+  });
+
   async function createCard(
     domain: QueryInput["domain"] & string,
     visibility: QueryInput["visibility"] & string,
     text: string,
     sourceRef: string,
     sourceTier: 1 | 2 = 1,
+    category?: string,
   ) {
-    return cards.saveWithEmbedding({ ...cardInput(domain, visibility, text), sourceRef, sourceTier });
+    return cards.saveWithEmbedding({
+      ...cardInput(domain, visibility, text),
+      ...(category === undefined ? {} : { category }),
+      sourceRef,
+      sourceTier,
+    });
   }
 });
 
@@ -417,6 +591,7 @@ function cardInput(domain: "work" | "hobby", visibility: "public" | "sensitive",
   return {
     domain,
     visibility,
+    category: null as string | null,
     situation: `${text} situation`,
     judgment: `${text} judgment`,
     rationale: `${text} rationale`,

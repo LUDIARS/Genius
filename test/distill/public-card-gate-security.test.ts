@@ -9,6 +9,7 @@ function publicCard(): DistilledCard {
   return {
     domain: "work",
     visibility: "public",
+    category: null,
     situation: `When ${PRIVATE_MARKER} needs a decision`,
     judgment: "Choose a reversible option",
     rationale: "It preserves information",

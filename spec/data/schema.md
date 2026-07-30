@@ -10,6 +10,7 @@ DB: `data/genius.db` (better-sqlite3, WAL)。migration は番号連番 + 冪等
 | id | TEXT PK | ULID |
 | domain | TEXT | `work` \| `hobby` |
 | visibility | TEXT | `public` \| `sensitive` |
+| category | TEXT NULL | 統制語彙 (`card_categories.name`)。NULL = 未分類 (backfill 前)。trigger で統制外値を reject |
 | situation | TEXT | どういう場面か (一般化した記述) |
 | judgment | TEXT | 私ならこうする |
 | rationale | TEXT | なぜか |
@@ -20,7 +21,38 @@ DB: `data/genius.db` (better-sqlite3, WAL)。migration は番号連番 + 冪等
 | superseded_by | TEXT NULL | 統合/更新先カード id (削除の代替) |
 | created_at / updated_at | INTEGER | epoch ms |
 
-インデックス: `(domain, visibility)`, `(superseded_by)`, `UNIQUE (source_ref)`。
+インデックス: `(domain, visibility)`, `(superseded_by)`, `(category)`, `UNIQUE (source_ref)`。
+
+## card_categories — カテゴリー統制語彙 (正)
+
+実行時の統制語彙の正本 (spec/feature/operations.md §1.1)。蒸留プロンプトの語彙リストは
+起動時にこのテーブルから生成する (プロンプトへのベタ書き禁止)。DELETE は提供しない。
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| name | TEXT PK | カテゴリー名 (例 `impl-design`) |
+| description | TEXT | 説明 (プロンプト語彙リストに使用) |
+| created_at | INTEGER | epoch ms |
+
+初期セット (migration 002 で seed): `impl-design` / `review` / `ops-lifecycle` /
+`delegation` / `writing` / `data-privacy` / `workflow` / `general` (既定)。
+`clone_cards.category` は trigger で統制語彙外の値を reject する。
+
+## clone_card_revisions — カード変更履歴
+
+PATCH による象限 (domain/visibility)・category 変更の監査記録。変更された**列名**のみ
+保持し、本文差分は保存しない (revisions 経由でセンシティブ本文を増殖させない —
+spec/feature/operations.md §2)。
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | TEXT PK | ULID |
+| card_id | TEXT | 対象カード id |
+| changed_fields | TEXT | 変更列名の JSON 配列 (値は含めない) |
+| changed_by | TEXT | `ui` \| `api` \| `cli` (認証がないため呼び出し元識別子) |
+| changed_at | INTEGER | epoch ms |
+
+インデックス: `(card_id)`。
 
 ## clone_vec — ベクトル索引 (派生キャッシュ)
 
