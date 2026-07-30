@@ -84,6 +84,7 @@ describe("Genius CLI", () => {
           sources: ["memory"],
           tier2: false,
           allowMissing: true,
+          retryFailed: false,
         },
       },
       { path: "/api/clone/stats", body: null },
@@ -123,6 +124,7 @@ describe("Genius CLI", () => {
           tier2: true,
           budgetFiles: 500,
           allowMissing: false,
+          retryFailed: false,
         },
       },
     ]);

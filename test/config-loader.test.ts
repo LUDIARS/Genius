@@ -116,6 +116,29 @@ describe("loadConfig", () => {
     expect(config.embedding.keepAlive).toBe("30m");
   });
 
+  it("defaults notify to disabled and honors the documented override", () => {
+    const disabled = loadConfig({
+      configPath: writeConfig(fixtureDirectory()),
+      environment: {},
+    });
+    expect(disabled.notify.concordiaBaseUrl).toBeNull();
+
+    const enabled = loadConfig({
+      configPath: writeConfig(fixtureDirectory()),
+      environment: { GENIUS_NOTIFY_CONCORDIA_BASE_URL: "http://127.0.0.1:14500" },
+    });
+    expect(enabled.notify.concordiaBaseUrl).toBe("http://127.0.0.1:14500");
+  });
+
+  it("rejects a non-loopback Concordia notify URL", () => {
+    const directory = fixtureDirectory();
+    const config = validConfig();
+    config.notify = { concordiaBaseUrl: "https://concordia.invalid" };
+    const configPath = writeConfig(directory, config);
+
+    expect(() => loadConfig({ configPath, environment: {} })).toThrowError(/loopback host/);
+  });
+
   it("allows null sources at load and fails only when selected", () => {
     const config = loadConfig({
       configPath: writeConfig(fixtureDirectory()),

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/api/app.js";
 import type { ApiServices, QueryInput } from "../../src/api/contracts.js";
 import { CardRepository } from "../../src/cards/card-repository.js";
+import { ingestRunViewSchema } from "../../src/client/ingest-run-contract.js";
 import { openDatabase, type GeniusDatabase } from "../../src/db/database.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import type { DistilledCard } from "../../src/domain/card.js";
@@ -81,6 +82,7 @@ describe("clone API", () => {
       cardsCreated: 0,
       cardsMerged: 0,
       skipped: 0,
+      failedDocuments: 0,
       startedAt: 1,
       finishedAt: null,
       error: null,
@@ -95,6 +97,7 @@ describe("clone API", () => {
           return ingestRun;
         },
         status: (id) => (id === ingestRun.id ? ingestRun : null),
+        unresolvedFailures: () => 0,
       },
       stats,
     };
@@ -246,9 +249,13 @@ describe("clone API", () => {
       tier2: true,
       budgetFiles: 7,
       allowMissing: true,
+      retryFailed: false,
     });
     expect(statusResponse.status).toBe(200);
-    expect(status).toEqual(ingestRun);
+    expect(status).toEqual({ ...ingestRun, unresolvedFailures: 0 });
+    // 消費側 (GeniusHttpClient.getIngestRun / Timer Delegation polling) の契約と
+    // route 応答が乖離しないことを固定する (spec/feature/operations.md §4)。
+    expect(ingestRunViewSchema.safeParse(status).success).toBe(true);
     expect((await app.request("/api/clone/ingest/runs/unknown")).status).toBe(404);
   });
 
@@ -274,6 +281,7 @@ describe("clone API", () => {
       tiers: Record<string, number>;
       lastIngestAt: number | null;
       superseded: number;
+      unresolvedIngestFailures: number;
     };
     const rejectedExport = await app.request("/api/clone/export");
     const exportResponse = await app.request("/api/clone/export?visibility=public");
@@ -285,6 +293,7 @@ describe("clone API", () => {
     expect(stats.tiers).toEqual({ "1": 2, "2": 1 });
     expect(stats.lastIngestAt).toBe(42);
     expect(stats.superseded).toBe(1);
+    expect(stats.unresolvedIngestFailures).toBe(0);
     expect(rejectedExport.status).toBe(400);
     expect(exported.cards).toHaveLength(1);
     expect(exported.cards[0]?.id).toBe(alpha.id);

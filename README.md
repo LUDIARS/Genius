@@ -99,6 +99,7 @@ Invoke-RestMethod -Uri http://127.0.0.1:4230/healthz
 | `GENIUS_SOURCE_CLAUDE_PROJECTS_DIR` | Claude JSONL ディレクトリ (Tier 2) |
 | `GENIUS_SOURCE_CODEX_SESSIONS_DIR` | Codex JSONL ディレクトリ (Tier 2) |
 | `GENIUS_SOURCE_MEMORIA_BASE_URL` | Memoria API URL |
+| `GENIUS_NOTIFY_CONCORDIA_BASE_URL` | 失敗 run 通知先の Concordia base URL (loopback のみ) |
 
 MCP、hook、eval などの HTTP クライアントは `GENIUS_BASE_URL` で明示的な loopback URL を
 指定できます。未指定時はカレントディレクトリの `genius.config.json` を読みます。
@@ -157,6 +158,63 @@ Memoria の diary API は月単位の一覧しか提供しないため、reader 
 GET /api/clone/ingest/runs/<run-id>
 ```
 
+## Ingest 失敗の隔離と再処理
+
+1 文書の処理失敗で run 全体は止まりません。失敗文書は `ingest_failures` テーブルへ
+永続化され (本文は保存しない)、run は残りの文書を処理して
+`completed-with-errors` で終わります。run 状況の `failedDocuments` と
+`unresolvedFailures`、`/api/clone/stats` の `unresolvedIngestFailures` で
+「失敗を抱えたまま運用が続いている」状態を確認できます。
+
+増分カーソルは失敗文書を追い越して前進するため、失敗文書の再処理は通常の
+ingest ではなく `--retry-failed` で行います。これは `ingest_failures` の未解決
+エントリだけをカーソル無関係に読み直し、成功したら `resolved_at` を立てます。
+
+```text
+node dist/cli.js ingest --sources <failed-source> --retry-failed
+```
+
+Tier 2 ソースの retry には `--tier2` も必要です (`--budget-files` は併用不可)。
+
+### LLM 向け判断指針 (通知を受けたときのフォールバック)
+
+自動リトライは実装していません。判断は通知を受けたセッションの LLM、実行は
+上記コマンドです。
+
+- **リトライ**: `error_kind` が一時的要因のとき — `source-read-failed`
+  (ファイルロック・一時 I/O)、`embedding-failed` (Ollama 未起動/再起動直後)。
+  依存サービスの稼働を確認してから `--retry-failed` を 1 回実行する。
+  例外: Memoria の `tasks/...` は payload を list した reader インスタンスだけが
+  保持する仕様のため (`Memoria task descriptor must be read by the reader instance
+  that listed it`)、`--retry-failed` では解消しない。カーソルも既に追い越して
+  いるので、該当タスクが更新されて再度 list に載るまで未解決のまま残る
+  (retry を繰り返さず skip 扱いにする)。
+- **skip (放置)**: 同じ文書が retry 後も `distillation-output-invalid` /
+  `processing-failed` で落ち続けるとき。未解決のまま残しても以後の run は
+  止まらない。件数は stats に出続けるため、放置する場合はその判断を
+  チャット/レポートに明記する。
+- **人間へエスカレーション**: 同一ソースで失敗が多発する (reader やソース側の
+  構造変化が疑われる)、retry を 2 回試しても解消しない、または判断に迷う
+  場合。3 回同じ修正を試さない (three-out)。
+
+## Concordia 通知
+
+run が `failed` / `completed-with-errors` で終わると、`genius.config.json` の
+`notify.concordiaBaseUrl` へ通知を POST します。`null` は通知無効で、起動時に
+その旨を 1 行出力します。設定済みで到達不能な場合は通知エラーを stderr と
+`logs/ingest.jsonl` (`notify-failed`) に明示しますが、ingest 本体の結果は
+覆しません。
+
+- 通知経路は Concordia の chat 投稿 API `POST /v1/chat`
+  (`channel: "報告"`, `author_label: "Genius"`)。実パスは Concordia 側の正本
+  `src/api/register-chat.ts` (`app.route("/v1/chat", chatRouter(...))`) と
+  `src/api/chat.ts` (`PostSchema`: `channel` / `text` max 2000 /
+  `author_label` 必須) で確認済み (2026-07-30)。
+- payload に載せるのは run id・ソース名・失敗件数・エラー種別/メッセージ要約・
+  ソース相対の文書パスのみです。文書本文・カード本文・絶対パスは載せません
+  (Concordia の channel-archives は Genius 自身の ingest ソースであり、通知
+  内容は DB へ環流するため)。
+
 ## HTTP API
 
 | Method | Path | 用途 |
@@ -169,8 +227,8 @@ GET /api/clone/ingest/runs/<run-id>
 | POST | `/api/clone/cards` | 手動カード追加 |
 | PATCH | `/api/clone/cards/:id` | 本文・象限・supersede 更新。必要時は再 embedding |
 | POST | `/api/clone/ingest/run` | 非同期 ingest 開始 |
-| GET | `/api/clone/ingest/runs/:id` | ingest 状態取得 |
-| GET | `/api/clone/stats` | 象限・tier・supersede・最終 ingest 集計 |
+| GET | `/api/clone/ingest/runs/:id` | ingest 状態取得 (`status` は 4 値 union + `unresolvedFailures`) |
+| GET | `/api/clone/stats` | 象限・tier・supersede・最終 ingest・未解決失敗件数の集計 |
 | GET | `/api/clone/export?visibility=public` | active public カード export |
 
 DELETE API はありません。履歴は `supersededBy` で保持します。詳細な body と response は
@@ -252,7 +310,10 @@ node dist/cli.js ingest
 
 Timer Delegation には上記 command、Genius repository の working directory、失敗時の通知を
 設定します。CLI 成功は非同期 run の受付成功を表すため、返された run id を
-`GET /api/clone/ingest/runs/:id` で polling し、`completed` を完了条件にしてください。
+`GET /api/clone/ingest/runs/:id` で polling し、`completed` または
+`completed-with-errors` を完了条件にしてください (「`completed` 以外は失敗」と
+判定しない — `src/client/ingest-run-contract.ts` の `isIngestRunSuccessful` を使う)。
+`completed-with-errors` の場合は「Ingest 失敗の隔離と再処理」の指針に従います。
 
 ### Tier 2 夜間バッチ (Memoria #550)
 
@@ -346,7 +407,9 @@ sqlite3 data/genius.db ".backup 'data/backups/genius-snapshot.db'"
 | MCP/hook が config を見つけない | cwd を repository にするか、loopback の `GENIUS_BASE_URL` を明示する |
 | hook が compiled config を見つけない | repository で `npm run build` を実行する |
 | active model / dimension mismatch | config と 1024 次元 index を確認し、必要なら maintenance 手順で reembed する |
-| ingest が受付後に失敗する | run status と `logs/ingest.jsonl` を確認する。エラーを無視して cursor を進めない |
+| ingest が受付後に失敗する | run status と `logs/ingest.jsonl` を確認する。文書単位の失敗は `ingest_failures` に残り、`--retry-failed` で再処理する |
+| `completed-with-errors` が続く | `/api/clone/stats` の `unresolvedIngestFailures` と `ingest_failures` を確認し、「LLM 向け判断指針」に従って retry / skip / エスカレーションを判断する |
+| 失敗通知が届かない | `notify.concordiaBaseUrl` が null になっていないか、起動ログの `[notify]` 行と `logs/ingest.jsonl` の `notify-failed` を確認する |
 
 ## Excubitor catalog
 

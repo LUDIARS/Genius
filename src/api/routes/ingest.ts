@@ -12,10 +12,18 @@ const ingestSchema = z
     tier2: z.boolean().default(false),
     budgetFiles: z.number().int().positive().optional(),
     allowMissing: z.boolean().default(false),
+    retryFailed: z.boolean().default(false),
   })
   .strict()
   .superRefine((input, context) => {
-    if (input.tier2 && input.budgetFiles === undefined) {
+    if (input.retryFailed && input.budgetFiles !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["budgetFiles"],
+        message: "retryFailed does not accept budgetFiles",
+      });
+    }
+    if (input.tier2 && !input.retryFailed && input.budgetFiles === undefined) {
       context.addIssue({
         code: "custom",
         path: ["budgetFiles"],
@@ -56,6 +64,9 @@ export function registerIngestRoutes(app: Hono, ingest: ApiServices["ingest"]): 
 
   app.get("/api/clone/ingest/runs/:id", (c) => {
     const run = ingest.status(c.req.param("id"));
-    return run ? c.json(run) : c.json({ error: "Ingest run not found" }, 404);
+    if (!run) return c.json({ error: "Ingest run not found" }, 404);
+    // 「失敗を抱えたまま completed-with-errors が続いている」状態を run 照会で
+    // 見えるようにする (spec/feature/operations.md §4)。
+    return c.json({ ...run, unresolvedFailures: ingest.unresolvedFailures(run.sources) });
   });
 }

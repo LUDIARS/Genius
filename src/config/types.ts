@@ -50,12 +50,21 @@ export interface DistillConfig {
   ollamaModel: string;
 }
 
+export interface NotifyConfig {
+  /**
+   * 失敗 run (failed / completed-with-errors) を通知する Concordia の base URL。
+   * loopback のみ許可。null = 通知無効 (起動時に 1 行明示する)。
+   */
+  concordiaBaseUrl: string | null;
+}
+
 export interface GeniusConfig {
   port: number;
   dataDir: string;
   embedding: EmbeddingConfig;
   distill: DistillConfig;
   sources: SourceConfig;
+  notify: NotifyConfig;
 }
 
 export interface LoadedGeniusConfig extends GeniusConfig {

@@ -39,6 +39,15 @@ const configSchema = z
       })
       .strict(),
     sources: sourceConfigSchema,
+    // notify 節が無い既存 config を壊さないため optional。既定は「通知無効」
+    // だが無言にはせず、createRuntime が起動時に 1 行明示する。
+    notify: z
+      .object({
+        concordiaBaseUrl: z.string().trim().min(1).nullable(),
+      })
+      .strict()
+      .optional()
+      .default({ concordiaBaseUrl: null }),
   })
   .strict();
 
@@ -61,6 +70,7 @@ export const CONFIG_ENVIRONMENT_VARIABLES = {
   claudeProjectsDir: "GENIUS_SOURCE_CLAUDE_PROJECTS_DIR",
   codexSessionsDir: "GENIUS_SOURCE_CODEX_SESSIONS_DIR",
   memoriaBaseUrl: "GENIUS_SOURCE_MEMORIA_BASE_URL",
+  notifyConcordiaBaseUrl: "GENIUS_NOTIFY_CONCORDIA_BASE_URL",
 } as const;
 
 export interface LoadConfigOptions {
@@ -112,6 +122,14 @@ function applyEnvironmentOverrides(
   const embedding = objectAt(result, "embedding");
   const distill = objectAt(result, "distill");
   const sources = objectAt(result, "sources");
+
+  const notifyConcordiaBaseUrl = environmentValue(
+    environment,
+    CONFIG_ENVIRONMENT_VARIABLES.notifyConcordiaBaseUrl,
+  );
+  if (notifyConcordiaBaseUrl !== undefined) {
+    objectAt(result, "notify").concordiaBaseUrl = notifyConcordiaBaseUrl;
+  }
 
   const port = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.port);
   if (port !== undefined) result.port = strictInteger(port, CONFIG_ENVIRONMENT_VARIABLES.port);
@@ -273,6 +291,15 @@ export function loadConfig(options: LoadConfigOptions = {}): LoadedGeniusConfig 
       ),
     },
     sources: resolveSourceLocations(parsed.data.sources, configDirectory),
+    notify: {
+      concordiaBaseUrl:
+        parsed.data.notify.concordiaBaseUrl === null
+          ? null
+          : normalizeLoopbackHttpUrl(
+              parsed.data.notify.concordiaBaseUrl,
+              "notify.concordiaBaseUrl",
+            ),
+    },
     configPath,
   };
 }

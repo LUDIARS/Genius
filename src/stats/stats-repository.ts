@@ -65,12 +65,16 @@ export class StatsRepository {
       .get() as LastIngestRow;
     const superseded = this.#count("SELECT COUNT(*) AS count FROM clone_cards WHERE superseded_by IS NOT NULL");
     const total = this.#count("SELECT COUNT(*) AS count FROM clone_cards");
+    const unresolvedIngestFailures = this.#count(
+      "SELECT COUNT(*) AS count FROM ingest_failures WHERE resolved_at IS NULL",
+    );
     return {
       quadrants,
       tiers,
       lastIngestAt: lastIngest.last_ingest_at,
       superseded,
       total,
+      unresolvedIngestFailures,
     };
   }
 

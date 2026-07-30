@@ -7,6 +7,7 @@ import type {
   ScoredCloneCard,
 } from "../domain/card.js";
 import type { IngestOptions, IngestRunRecord } from "../ingest/ingest-contracts.js";
+import type { SourceName } from "../readers/source-reader.js";
 
 export interface HealthStatus {
   ok: boolean;
@@ -47,6 +48,8 @@ export interface CloneStats {
   lastIngestAt: number | null;
   superseded: number;
   total: number;
+  /** ingest_failures の resolved_at IS NULL 件数 (取りこぼしの可視化)。 */
+  unresolvedIngestFailures: number;
 }
 
 export interface PublicExportCard {
@@ -79,6 +82,7 @@ export interface ApiServices {
   ingest: {
     start(options: IngestOptions): IngestRunRecord;
     status(id: string): IngestRunRecord | null;
+    unresolvedFailures(sources?: readonly SourceName[]): number;
   };
   stats: {
     get(): Promise<CloneStats>;

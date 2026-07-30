@@ -11,9 +11,9 @@
 | GET | `/api/clone/cards/:id` | 単体 |
 | POST | `/api/clone/cards` | 手動カード追加 (public は保存直前に共通センシティブ検査) |
 | PATCH | `/api/clone/cards/:id` | 本文修正 / supersede / 象限訂正 (訂正時は再埋め込み) |
-| POST | `/api/clone/ingest/run` | `{sources?: string[], tier2?: boolean, budgetFiles?: number, allowMissing?: boolean}` → run id (非同期実行) |
-| GET | `/api/clone/ingest/runs/:id` | 実行状況 (distill_runs) |
-| GET | `/api/clone/stats` | 象限別カード数 / tier 別 / 最終 ingest |
+| POST | `/api/clone/ingest/run` | `{sources?: string[], tier2?: boolean, budgetFiles?: number, allowMissing?: boolean, retryFailed?: boolean}` → run id (非同期実行)。`retryFailed=true` は `ingest_failures` の未解決文書だけをカーソル無関係に再処理する (`budgetFiles` と併用不可) |
+| GET | `/api/clone/ingest/runs/:id` | 実行状況 (distill_runs)。`status` は `running \| completed \| completed-with-errors \| failed` の 4 値 union — **「completed 以外は失敗」と判定しない** (`completed-with-errors` は正常終了扱い)。`failedDocuments` (この run で隔離された失敗文書数) と `unresolvedFailures` (run 対象ソースの未解決失敗件数) を含む |
+| GET | `/api/clone/stats` | 象限別カード数 / tier 別 / 最終 ingest / `unresolvedIngestFailures` (全ソースの未解決失敗件数) |
 | GET | `/api/clone/export` | `?visibility=public` — public カードの JSON export (datahub push 用素材。push 自体はスコープ外) |
 
 - DELETE は提供しない (supersede で代替)。
@@ -23,7 +23,7 @@
 
 ```
 genius query "<text>" [--domain work|hobby] [--visibility public|sensitive] [-k 8]
-genius ingest [--sources memory,review] [--tier2] [--budget-files 500] [--allow-missing]
+genius ingest [--sources memory,review] [--tier2] [--budget-files 500] [--allow-missing] [--retry-failed]
 genius stats
 genius reembed --model <name>   # モデル移行バッチ
 ```
@@ -57,6 +57,11 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
     "sensitiveCheckModel": "claude-haiku-4-5-20251001",
     "ollamaModel": "gemma4:12b"          // backend=ollama 時
   },
+  "notify": {
+    "concordiaBaseUrl": null    // 失敗 run (failed / completed-with-errors) の通知先
+                                 // Concordia base URL。loopback のみ許可。
+                                 // null = 通知無効 (起動時に 1 行明示)
+  },
   "sources": {
     "memoryDir": null,          // 例 C:/Users/<user>/.claude/projects/<proj>/memory
     "sessionLogsDir": null,     // 例 E:/Document/Ars/session-logs
@@ -74,6 +79,10 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
 - 個人絶対パスをソースコードへハードコードしない (HARNESS 地雷ルール)。
 - `GENIUS_EMBEDDING_NUM_GPU` で `numGpu` を明示 override できる。自動 CPU
   フォールバックは行わない。
+- `GENIUS_NOTIFY_CONCORDIA_BASE_URL` で `notify.concordiaBaseUrl` を override できる。
+  通知 payload は run id・ソース名・失敗件数・エラー種別/メッセージ要約・
+  ソース相対パスのみ。文書本文・カード本文・絶対パスは載せない
+  (spec/feature/operations.md §4)。
 - `GENIUS_EMBEDDING_KEEP_ALIVE` で `keepAlive` を明示 override できる
   (Ollama `keep_alive`)。GPU 自動検出が壊れたホストでモデルがアンロード
   された後の再ロードが GPU 経路をまず試みて数秒〜十数秒詰まる事例を確認済み

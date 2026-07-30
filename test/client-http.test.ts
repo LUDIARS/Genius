@@ -2,9 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 import {
   GeniusHttpClient,
   GeniusHttpClientError,
+  isIngestRunFinished,
+  isIngestRunSuccessful,
   normalizeLoopbackBaseUrl,
   resolveGeniusBaseUrl,
 } from "../src/client/index.js";
+
+const INGEST_RUN = {
+  id: "01J00000000000000000000001",
+  sources: ["memory"],
+  status: "completed-with-errors" as const,
+  filesProcessed: 3,
+  cardsCreated: 2,
+  cardsMerged: 0,
+  skipped: 1,
+  failedDocuments: 1,
+  startedAt: 1,
+  finishedAt: 2,
+  error: null,
+  unresolvedFailures: 1,
+};
 
 const CARD = {
   id: "01J00000000000000000000000",
@@ -109,6 +126,37 @@ describe("GeniusHttpClient", () => {
     ).rejects.toThrow(/returned 1 results for 2 inputs/);
   });
 
+  it("reads an ingest run status including completed-with-errors", async () => {
+    const fetchImplementation = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(INGEST_RUN), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const client = new GeniusHttpClient({
+      baseUrl: "http://127.0.0.1:4230",
+      fetch: fetchImplementation as typeof fetch,
+    });
+
+    await expect(client.getIngestRun("01J00000000000000000000001")).resolves.toEqual(INGEST_RUN);
+    const [url, init] = fetchImplementation.mock.calls[0] ?? [];
+    expect(String(url)).toBe(
+      "http://127.0.0.1:4230/api/clone/ingest/runs/01J00000000000000000000001",
+    );
+    expect(init?.redirect).toBe("error");
+  });
+
+  it("rejects an ingest run status that omits the failure counters", async () => {
+    const { failedDocuments: _failedDocuments, ...withoutCounters } = INGEST_RUN;
+    const client = new GeniusHttpClient({
+      baseUrl: "http://127.0.0.1:4230",
+      fetch: vi.fn(async () => new Response(JSON.stringify(withoutCounters))) as typeof fetch,
+    });
+
+    await expect(client.getIngestRun("run-1")).rejects.toThrow(/invalid response/i);
+  });
+
   it("rejects malformed success responses", async () => {
     const client = new GeniusHttpClient({
       baseUrl: "http://127.0.0.1:4230",
@@ -116,6 +164,20 @@ describe("GeniusHttpClient", () => {
     });
 
     await expect(client.query({ text: "query" })).rejects.toThrow(/invalid response/i);
+  });
+});
+
+describe("ingest run status predicates", () => {
+  it("treats completed-with-errors as a finished, successful run", () => {
+    expect(isIngestRunFinished("running")).toBe(false);
+    expect(isIngestRunFinished("completed-with-errors")).toBe(true);
+    expect(isIngestRunFinished("failed")).toBe(true);
+
+    // 「completed 以外は失敗」判定の回帰防止 (spec/feature/operations.md §4)。
+    expect(isIngestRunSuccessful("completed")).toBe(true);
+    expect(isIngestRunSuccessful("completed-with-errors")).toBe(true);
+    expect(isIngestRunSuccessful("failed")).toBe(false);
+    expect(isIngestRunSuccessful("running")).toBe(false);
   });
 });
 

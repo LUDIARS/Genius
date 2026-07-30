@@ -14,6 +14,9 @@
     "sensitiveCheckModel": "claude-haiku-4-5-20251001",
     "ollamaModel": "gemma4:12b"
   },
+  "notify": {
+    "concordiaBaseUrl": null
+  },
   "sources": {
     "memoryDir": null,
     "sessionLogsDir": null,

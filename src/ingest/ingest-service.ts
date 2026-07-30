@@ -1,11 +1,14 @@
 import type { SourceDocumentDescriptor, SourceName } from "../readers/source-reader.js";
 import type { SourceReader } from "../readers/source-reader.js";
-import { SourceReaderError } from "../readers/reader-error.js";
-import { EmbeddingError } from "../embedding/types.js";
+import { classifyIngestError } from "./failure-classification.js";
 import type {
   DocumentDistiller,
+  IngestFailureStore,
+  IngestLogEntry,
   IngestLogger,
   IngestOptions,
+  IngestRunNotificationFailure,
+  IngestRunNotifier,
   IngestRunRecord,
   IngestRunStore,
   IngestStateStore,
@@ -25,7 +28,10 @@ const TIER_TWO_SOURCES: readonly SourceName[] = ["claude-jsonl", "codex-jsonl"];
 export interface IngestServiceDependencies {
   clock?: () => number;
   distiller: DocumentDistiller;
+  failures: IngestFailureStore;
   logger: IngestLogger;
+  /** null = 通知無効 (config で明示)。失敗 run を Concordia chat へ知らせる。 */
+  notifier?: IngestRunNotifier | null;
   readers: ReaderResolver;
   runs: IngestRunStore;
   state: IngestStateStore;
@@ -35,7 +41,9 @@ export interface IngestServiceDependencies {
 export class IngestService {
   readonly #clock: () => number;
   readonly #distiller: DocumentDistiller;
+  readonly #failures: IngestFailureStore;
   readonly #logger: IngestLogger;
+  readonly #notifier: IngestRunNotifier | null;
   readonly #readers: ReaderResolver;
   readonly #runs: IngestRunStore;
   readonly #state: IngestStateStore;
@@ -46,7 +54,9 @@ export class IngestService {
   constructor(dependencies: IngestServiceDependencies) {
     this.#clock = dependencies.clock ?? Date.now;
     this.#distiller = dependencies.distiller;
+    this.#failures = dependencies.failures;
     this.#logger = dependencies.logger;
+    this.#notifier = dependencies.notifier ?? null;
     this.#readers = dependencies.readers;
     this.#runs = dependencies.runs;
     this.#state = dependencies.state;
@@ -73,6 +83,10 @@ export class IngestService {
 
   status(id: string): IngestRunRecord | null {
     return this.#runs.get(id);
+  }
+
+  unresolvedFailures(sources?: readonly SourceName[]): number {
+    return this.#failures.countUnresolved(sources);
   }
 
   async wait(id: string): Promise<IngestRunRecord> {
@@ -110,6 +124,7 @@ export class IngestService {
     readers: ReadonlyMap<SourceName, SourceReader | null>,
   ): Promise<void> {
     const totals = emptyTotals();
+    const failures: IngestRunNotificationFailure[] = [];
     let currentSource: SourceName = options.sources[0] ?? "memory";
     try {
       await this.#logger.append(
@@ -132,54 +147,30 @@ export class IngestService {
           logEntry(this.#clock, run.id, source, emptyTotals(), "source-started"),
         );
 
-        const cursor = this.#state.get(source);
-        const batch = await reader.listDocuments(cursor, {
-          ...(reader.tier === 2 ? { budgetFiles: options.budgetFiles } : {}),
-        });
-        for (const descriptor of batch.documents) {
-          const document = await reader.readDocument(descriptor);
-          await this.#logger.append({
-            ...logEntry(
-              this.#clock,
-              run.id,
-              source,
-              emptyTotals(),
-              "document-started",
-            ),
-            sourceRef: document.sourceRef,
-          });
-          const result = await this.#distiller.distill(document);
-          totals.filesProcessed += 1;
-          totals.cardsCreated += result.cardsCreated;
-          totals.cardsMerged += result.cardsMerged;
-          const skipped = result.cardsCreated === 0;
-          if (skipped) totals.skipped += 1;
-          await this.#logger.append({
-            ...logEntry(
-              this.#clock,
-              run.id,
-              source,
-              {
-                filesProcessed: 1,
-                cardsCreated: result.cardsCreated,
-                cardsMerged: result.cardsMerged,
-                skipped: skipped ? 1 : 0,
-              },
-              skipped ? "document-skipped" : "document-completed",
-              skipped ? "no-cards-produced" : undefined,
-            ),
-            sourceRef: document.sourceRef,
-          });
+        if (options.retryFailed) {
+          await this.#retrySource(run.id, source, reader, totals, failures);
+        } else {
+          await this.#ingestSource(run.id, source, reader, options, totals, failures);
         }
-        if (batch.nextCursor) this.#state.set(source, batch.nextCursor);
       }
-      this.#runs.finish(run.id, totals);
+      const status = failures.length === 0 ? "completed" : "completed-with-errors";
+      this.#runs.finish(run.id, totals, status, failures.length);
       const finalSource = options.sources.at(-1) ?? "memory";
-      await this.#logger.append(logEntry(this.#clock, run.id, finalSource, totals, "run-completed"));
+      await this.#logger.append(logEntry(
+        this.#clock,
+        run.id,
+        finalSource,
+        totals,
+        status === "completed" ? "run-completed" : "run-completed-with-errors",
+        status === "completed" ? undefined : `${failures.length} document(s) failed`,
+      ));
+      if (status === "completed-with-errors") {
+        await this.#notifyOutcome(run.id, status, options.sources, failures, null);
+      }
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
       const safeFailure = sanitizeFailure(failure, currentSource);
-      this.#runs.fail(run.id, totals, safeFailure);
+      this.#runs.fail(run.id, totals, safeFailure, failures.length);
       // Keep diagnostics observable without copying source/LLM text from an
       // arbitrary exception into stderr. The durable run record uses the same
       // bounded classification.
@@ -199,9 +190,184 @@ export class IngestService {
         const errorName = logError instanceof Error ? logError.name : "UnknownError";
         this.#warningSink(`Failed to write ingest failure log for run ${run.id} (${errorName})`);
       }
+      await this.#notifyOutcome(run.id, "failed", options.sources, failures, safeFailure.message);
     } finally {
       this.#active.delete(run.id);
       for (const source of options.sources) this.#activeSources.delete(source);
+    }
+  }
+
+  /** 通常 run: カーソル起点の増分。文書単位の失敗は隔離して続行する。 */
+  async #ingestSource(
+    runId: string,
+    source: SourceName,
+    reader: SourceReader,
+    options: NormalizedIngestOptions,
+    totals: IngestTotals,
+    failures: IngestRunNotificationFailure[],
+  ): Promise<void> {
+    const cursor = this.#state.get(source);
+    const batch = await reader.listDocuments(cursor, {
+      ...(reader.tier === 2 ? { budgetFiles: options.budgetFiles } : {}),
+    });
+    for (const descriptor of batch.documents) {
+      await this.#processDocument(runId, source, reader, descriptor, totals, failures);
+    }
+    // カーソルは失敗文書を追い越すが、失敗は ingest_failures に永続化済みで
+    // --retry-failed がカーソル無関係に再処理する (spec §4)。
+    if (batch.nextCursor) this.#state.set(source, batch.nextCursor);
+  }
+
+  /** --retry-failed run: 未解決の失敗文書だけをカーソル無関係に再処理する。 */
+  async #retrySource(
+    runId: string,
+    source: SourceName,
+    reader: SourceReader,
+    totals: IngestTotals,
+    failures: IngestRunNotificationFailure[],
+  ): Promise<void> {
+    for (const pending of this.#failures.listUnresolved([source])) {
+      // nativeId は review / memoria の readDocument が必須にするため復元する
+      // (落とすと retry が必ず source-read-failed になる)。
+      const descriptor: SourceDocumentDescriptor = {
+        source,
+        tier: reader.tier,
+        locator: pending.locator,
+        mtimeMs: pending.mtimeMs,
+        ...(pending.nativeId === null ? {} : { nativeId: pending.nativeId }),
+      };
+      await this.#processDocument(runId, source, reader, descriptor, totals, failures);
+    }
+  }
+
+  /**
+   * 1 文書を読み取り・蒸留する。失敗は run を止めず、ingest_failures へ
+   * 記録して続行する。成功した文書は既存の失敗記録を解決済みにする。
+   */
+  async #processDocument(
+    runId: string,
+    source: SourceName,
+    reader: SourceReader,
+    descriptor: SourceDocumentDescriptor,
+    totals: IngestTotals,
+    failures: IngestRunNotificationFailure[],
+  ): Promise<void> {
+    try {
+      const document = await reader.readDocument(descriptor);
+      await this.#logger.append({
+        ...logEntry(this.#clock, runId, source, emptyTotals(), "document-started"),
+        sourceRef: document.sourceRef,
+      });
+      const result = await this.#distiller.distill(document);
+      totals.filesProcessed += 1;
+      totals.cardsCreated += result.cardsCreated;
+      totals.cardsMerged += result.cardsMerged;
+      const skipped = result.cardsCreated === 0;
+      if (skipped) totals.skipped += 1;
+      this.#failures.resolve(source, descriptor.locator);
+      await this.#logger.append({
+        ...logEntry(
+          this.#clock,
+          runId,
+          source,
+          {
+            filesProcessed: 1,
+            cardsCreated: result.cardsCreated,
+            cardsMerged: result.cardsMerged,
+            skipped: skipped ? 1 : 0,
+          },
+          skipped ? "document-skipped" : "document-completed",
+          skipped ? "no-cards-produced" : undefined,
+        ),
+        sourceRef: document.sourceRef,
+      });
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      const classified = classifyIngestError(failure);
+      failures.push({
+        source,
+        locator: descriptor.locator,
+        errorKind: classified.kind,
+        errorMessage: classified.message,
+      });
+      this.#warningSink(
+        `Ingest document failed (run ${runId}): ${source}:${descriptor.locator} — ${classified.kind}`,
+      );
+      // 記録側 (DB / jsonl) の失敗で run 全体を落とさない — それでは文書単位の
+      // 隔離が成立しない。握りつぶさず warningSink へ出し、run は
+      // completed-with-errors として続行する (spec/feature/operations.md §4)。
+      try {
+        this.#failures.record({
+          source,
+          locator: descriptor.locator,
+          mtimeMs: descriptor.mtimeMs,
+          nativeId: descriptor.nativeId ?? null,
+          runId,
+          errorKind: classified.kind,
+          errorMessage: classified.message,
+        });
+      } catch (storeError) {
+        const errorName = storeError instanceof Error ? storeError.name : "UnknownError";
+        this.#warningSink(
+          `Failed to persist ingest failure for ${source}:${descriptor.locator} (${errorName});`
+            + " --retry-failed will not pick it up",
+        );
+      }
+      try {
+        await this.#logger.append({
+          ...logEntry(
+            this.#clock,
+            runId,
+            source,
+            emptyTotals(),
+            "document-failed",
+            classified.message,
+          ),
+          sourceRef: `${source}:${descriptor.locator}`,
+          errorKind: classified.kind,
+        });
+      } catch (logError) {
+        const errorName = logError instanceof Error ? logError.name : "UnknownError";
+        this.#warningSink(
+          `Failed to write ingest document failure log for run ${runId} (${errorName})`,
+        );
+      }
+    }
+  }
+
+  /**
+   * 失敗 run の Concordia 通知。通知失敗は握りつぶさず stderr と
+   * logs/ingest.jsonl に明示するが、ingest 本体の結果は覆さない (spec §4)。
+   */
+  async #notifyOutcome(
+    runId: string,
+    status: "failed" | "completed-with-errors",
+    sources: readonly SourceName[],
+    failures: readonly IngestRunNotificationFailure[],
+    error: string | null,
+  ): Promise<void> {
+    if (this.#notifier === null) return;
+    try {
+      await this.#notifier.notifyRunOutcome({
+        runId,
+        status,
+        sources,
+        failedDocuments: failures.length,
+        unresolvedFailures: this.#failures.countUnresolved(sources),
+        failures,
+        error,
+      });
+    } catch (notifyError) {
+      const detail = notifyError instanceof Error ? notifyError.message : String(notifyError);
+      this.#warningSink(`Ingest run ${runId} Concordia notification failed: ${detail}`);
+      try {
+        await this.#logger.append(
+          logEntry(this.#clock, runId, sources[0] ?? "memory", emptyTotals(), "notify-failed", detail),
+        );
+      } catch (logError) {
+        const errorName = logError instanceof Error ? logError.name : "UnknownError";
+        this.#warningSink(`Failed to write notify failure log for run ${runId} (${errorName})`);
+      }
     }
   }
 }
@@ -211,11 +377,16 @@ interface NormalizedIngestOptions {
   tier2: boolean;
   budgetFiles: number;
   allowMissing: boolean;
+  retryFailed: boolean;
 }
 
 function normalizeOptions(options: IngestOptions): NormalizedIngestOptions {
   const tier2 = options.tier2 ?? false;
-  if (tier2 && options.budgetFiles === undefined) {
+  const retryFailed = options.retryFailed ?? false;
+  if (retryFailed && options.budgetFiles !== undefined) {
+    throw new IngestValidationError("retryFailed does not accept budgetFiles");
+  }
+  if (tier2 && !retryFailed && options.budgetFiles === undefined) {
     throw new IngestValidationError("Tier 2 ingest requires an explicit budgetFiles value");
   }
   const budgetFiles = options.budgetFiles ?? 500;
@@ -232,7 +403,13 @@ function normalizeOptions(options: IngestOptions): NormalizedIngestOptions {
       throw new IngestValidationError(`Tier 2 source requires tier2=true: ${source}`);
     }
   }
-  return { sources, tier2, budgetFiles, allowMissing: options.allowMissing ?? false };
+  return {
+    sources,
+    tier2,
+    budgetFiles,
+    allowMissing: options.allowMissing ?? false,
+    retryFailed,
+  };
 }
 
 export class IngestValidationError extends Error {
@@ -251,14 +428,9 @@ function skippedTotals(): IngestTotals {
 }
 
 function sanitizeFailure(error: Error, source: SourceName): Error {
-  const code = error instanceof SourceReaderError
-    ? "source-read-failed"
-    : error instanceof EmbeddingError
-      ? "embedding-failed"
-      : error.name === "ZodError"
-        ? "distillation-output-invalid"
-        : "processing-failed";
-  return new Error(`Ingest failed: ${code}; source=${source}`);
+  // 文書単位の隔離と同じ分類を使う (分類規則の二重管理を避ける)。message は
+  // 転記せず kind だけを残す — run 単位の失敗はソースが特定できれば十分。
+  return new Error(`Ingest failed: ${classifyIngestError(error).kind}; source=${source}`);
 }
 
 function logEntry(
@@ -266,27 +438,9 @@ function logEntry(
   runId: string,
   source: SourceName,
   totals: IngestTotals,
-  event:
-    | "run-started"
-    | "source-started"
-    | "document-started"
-    | "source-skipped"
-    | "document-completed"
-    | "document-skipped"
-    | "run-completed"
-    | "run-failed",
+  event: IngestLogEntry["event"],
   reason?: string,
-): {
-  at: string;
-  runId: string;
-  source: SourceName;
-  event: typeof event;
-  reason?: string;
-  filesProcessed: number;
-  cardsCreated: number;
-  cardsMerged: number;
-  skipped: number;
-} {
+): IngestLogEntry {
   return {
     at: new Date(clock()).toISOString(),
     runId,

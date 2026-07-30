@@ -13,6 +13,7 @@ import {
   IngestService,
   IngestValidationError,
 } from "../../src/ingest/ingest-service.js";
+import { SqliteIngestFailureStore } from "../../src/ingest/sqlite-ingest-failure-store.js";
 import {
   SqliteIngestRunStore,
   SqliteIngestStateStore,
@@ -97,6 +98,7 @@ describe("IngestService operational behavior", () => {
     const warnings: string[] = [];
     const service = new IngestService({
       distiller: { distill: async () => ({ cardsCreated: 0, cardsMerged: 0 }) },
+      failures: new SqliteIngestFailureStore(database),
       logger,
       readers: { resolve: () => null },
       runs,
@@ -122,6 +124,7 @@ describe("IngestService operational behavior", () => {
     const resolved: string[] = [];
     const service = new IngestService({
       distiller: { distill: async () => ({ cardsCreated: 0, cardsMerged: 0 }) },
+      failures: new SqliteIngestFailureStore(database),
       logger: new MemoryLogger(),
       readers: {
         resolve: (source) => {
@@ -185,6 +188,7 @@ describe("IngestService operational behavior", () => {
           return { cardsCreated: 0, cardsMerged: 0 };
         },
       },
+      failures: new SqliteIngestFailureStore(database),
       logger: new MemoryLogger(),
       readers: { resolve: (source) => source === "memory" ? new FixtureReader() : null },
       runs,
@@ -232,6 +236,7 @@ function createService(
 ): IngestService {
   return new IngestService({
     distiller: { distill: async () => ({ cardsCreated: 0, cardsMerged: 0 }) },
+    failures: new SqliteIngestFailureStore(database),
     logger,
     readers: { resolve: (source) => source === "memory" ? reader : null },
     runs,

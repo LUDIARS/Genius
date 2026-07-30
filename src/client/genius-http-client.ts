@@ -1,5 +1,6 @@
 import { normalizeLoopbackBaseUrl, resolveGeniusBaseUrl, type Environment } from "./base-url.js";
 import { loadConfig, type LoadConfigOptions } from "../config/load-config.js";
+import { ingestRunViewSchema, type IngestRunView } from "./ingest-run-contract.js";
 import {
   geniusQueryBatchResultSchema,
   geniusQueryInputSchema,
@@ -25,12 +26,14 @@ export class GeniusHttpClientError extends Error {
 }
 
 export class GeniusHttpClient implements GeniusQueryService {
+  readonly #baseUrl: string;
   readonly #queryUrl: URL;
   readonly #queryBatchUrl: URL;
   readonly #fetch: typeof globalThis.fetch;
 
   constructor(options: GeniusHttpClientOptions) {
     const baseUrl = normalizeLoopbackBaseUrl(options.baseUrl);
+    this.#baseUrl = baseUrl;
     this.#queryUrl = new URL("/api/clone/query", baseUrl);
     this.#queryBatchUrl = new URL("/api/clone/query-batch", baseUrl);
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -69,6 +72,34 @@ export class GeniusHttpClient implements GeniusQueryService {
       );
     }
     return parsed.data.results;
+  }
+
+  /**
+   * ingest run の状況取得 (Timer Delegation polling 等の消費側入口)。
+   * status は completed-with-errors を含む union — 完了判定には
+   * `isIngestRunSuccessful` / `isIngestRunFinished` を使うこと。
+   */
+  async getIngestRun(id: string): Promise<IngestRunView> {
+    const url = new URL(`/api/clone/ingest/runs/${encodeURIComponent(id)}`, this.#baseUrl);
+    let response: Response;
+    try {
+      response = await this.#fetch(url, {
+        method: "GET",
+        headers: { accept: "application/json" },
+        redirect: "error",
+      });
+    } catch (error) {
+      throw new GeniusHttpClientError(`Genius request failed: ${url.pathname}`, { cause: error });
+    }
+    const body = await this.#readJson(response, "Genius ingest run status");
+
+    const parsed = ingestRunViewSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new GeniusHttpClientError(
+        `Genius ingest run status returned an invalid response: ${formatIssues(parsed.error.issues)}`,
+      );
+    }
+    return parsed.data;
   }
 
   async #post(url: URL, body: unknown): Promise<Response> {

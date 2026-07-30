@@ -23,6 +23,7 @@ const services: ApiServices = {
   ingest: {
     start() { throw new Error("ingest must not run for rejected input"); },
     status() { return null; },
+    unresolvedFailures() { return 0; },
   },
   stats: {
     async get() {
@@ -37,6 +38,7 @@ const services: ApiServices = {
         lastIngestAt: null,
         superseded: 0,
         total: 0,
+        unresolvedIngestFailures: 0,
       };
     },
     async exportPublic() { return []; },

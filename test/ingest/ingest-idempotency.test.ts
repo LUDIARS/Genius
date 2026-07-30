@@ -9,6 +9,7 @@ import type { EmbeddingClient } from "../../src/embedding/types.js";
 import { VectorStore } from "../../src/embedding/vector-store.js";
 import type { IngestLogEntry, IngestLogger } from "../../src/ingest/ingest-contracts.js";
 import { IngestService } from "../../src/ingest/ingest-service.js";
+import { SqliteIngestFailureStore } from "../../src/ingest/sqlite-ingest-failure-store.js";
 import { SqliteIngestRunStore, SqliteIngestStateStore } from "../../src/ingest/sqlite-ingest-stores.js";
 import type {
   ReaderCursor,
@@ -108,6 +109,7 @@ describe("incremental ingest", () => {
           return { cardsCreated: 1, cardsMerged: 0 };
         },
       },
+      failures: new SqliteIngestFailureStore(database),
       logger: new MemoryLogger(),
       readers: { resolve: (source) => (source === "memory" ? reader : null) },
       runs,

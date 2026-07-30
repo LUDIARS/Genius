@@ -65,6 +65,31 @@ CREATE VIRTUAL TABLE IF NOT EXISTS clone_vec USING vec0(
 | started_at / finished_at | INTEGER |
 | notes | TEXT |
 
+`notes` は `{status, error, failedDocuments}` の JSON。`status` は
+`running | completed | completed-with-errors | failed` の 4 値
+(migration 002 以前の行は `failedDocuments` 欠落 = 0 扱い)。
+
+## ingest_failures — 失敗文書 (migration 002)
+
+文書単位のエラー隔離 (spec/feature/operations.md §4)。カーソルが失敗文書を
+追い越しても `--retry-failed` で再処理できるよう永続化する。**本文は保存しない**
+(`error_message` は bounded な分類済みメッセージのみ)。
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| source | TEXT | ソース名 (ingest_state と同じ統制値) |
+| locator | TEXT | ソース相対パス / API キー (絶対パス禁止) |
+| mtime_ms | INTEGER | 失敗時点の文書 mtime |
+| native_id | TEXT NULL | reader 私有の安定 ID (review の manifest locator / Memoria の API パス)。retry 時の descriptor 復元用。絶対パス禁止 |
+| run_id | TEXT | 最後に失敗した run |
+| error_kind | TEXT | `source-read-failed` / `embedding-failed` / `distillation-output-invalid` / `processing-failed` |
+| error_message | TEXT | 本文を含まない要約 (管理外の例外はエラー名のみ) |
+| failed_at | INTEGER | 最終失敗時刻 (epoch ms) |
+| resolved_at | INTEGER NULL | 再処理成功時に設定。NULL = 未解決 |
+
+PK は `(source, locator)` — 再失敗は同一行を上書きし `resolved_at` を NULL に戻す。
+部分インデックス `idx_ingest_failures_unresolved` (`resolved_at IS NULL`)。
+
 ## 派生キャッシュ
 
 `embedding_cache` は task-02 の content-addressed cache。テキスト本文は保存せず、

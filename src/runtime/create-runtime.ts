@@ -17,8 +17,11 @@ import { EmbeddingModelRegistry } from "../embedding/model-registry.js";
 import { OllamaEmbeddingClient } from "../embedding/ollama-client.js";
 import type { EmbeddingClient } from "../embedding/types.js";
 import { VectorStore } from "../embedding/vector-store.js";
+import { ConcordiaRunNotifier } from "../ingest/concordia-run-notifier.js";
+import type { IngestRunNotifier } from "../ingest/ingest-contracts.js";
 import { IngestService } from "../ingest/ingest-service.js";
 import { JsonlIngestLogger } from "../ingest/jsonl-ingest-logger.js";
+import { SqliteIngestFailureStore } from "../ingest/sqlite-ingest-failure-store.js";
 import { SqliteIngestRunStore, SqliteIngestStateStore } from "../ingest/sqlite-ingest-stores.js";
 import { QueryService } from "../query/query-service.js";
 import { createReaderRegistry, type ReaderFactoryInputs } from "../readers/registry.js";
@@ -93,7 +96,9 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
     const readers = createReaderRegistry(config.sources satisfies ReaderFactoryInputs);
     const ingest = new IngestService({
       distiller,
+      failures: new SqliteIngestFailureStore(database),
       logger: new JsonlIngestLogger(join(dirname(config.configPath), "logs", "ingest.jsonl")),
+      notifier: createRunNotifier(config),
       readers: { resolve: (source: SourceName) => readers.get(source) ?? null },
       runs: new SqliteIngestRunStore(database),
       state: new SqliteIngestStateStore(database),
@@ -128,6 +133,17 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
     database.close();
     throw error;
   }
+}
+
+function createRunNotifier(config: LoadedGeniusConfig): IngestRunNotifier | null {
+  if (config.notify.concordiaBaseUrl === null) {
+    // 無効は許容するが無言にはしない (spec/feature/operations.md §4)。
+    process.stderr.write(
+      "[notify] Concordia run notification is disabled (notify.concordiaBaseUrl is null)\n",
+    );
+    return null;
+  }
+  return new ConcordiaRunNotifier({ baseUrl: config.notify.concordiaBaseUrl });
 }
 
 function createDistillLlm(config: LoadedGeniusConfig): DistillLlm {

@@ -28,7 +28,15 @@ interface DistillRunRow {
 interface RunNotes {
   status: IngestRunRecord["status"];
   error: string | null;
+  failedDocuments: number;
 }
+
+const RUN_STATUSES: readonly IngestRunRecord["status"][] = [
+  "running",
+  "completed",
+  "completed-with-errors",
+  "failed",
+];
 
 export class SqliteIngestStateStore implements IngestStateStore {
   readonly #database: GeniusDatabase;
@@ -81,6 +89,7 @@ export class SqliteIngestRunStore implements IngestRunStore {
       cardsCreated: 0,
       cardsMerged: 0,
       skipped: 0,
+      failedDocuments: 0,
       startedAt: this.#clock(),
       finishedAt: null,
       error: null,
@@ -92,16 +101,21 @@ export class SqliteIngestRunStore implements IngestRunStore {
            started_at, finished_at, notes
          ) VALUES (?, ?, 0, 0, 0, 0, ?, NULL, ?)`,
       )
-      .run(record.id, sources.join(","), record.startedAt, encodeNotes("running", null));
+      .run(record.id, sources.join(","), record.startedAt, encodeNotes("running", null, 0));
     return record;
   }
 
-  finish(id: string, totals: IngestTotals): void {
-    this.#updateFinished(id, totals, "completed", null);
+  finish(
+    id: string,
+    totals: IngestTotals,
+    status: "completed" | "completed-with-errors",
+    failedDocuments: number,
+  ): void {
+    this.#updateFinished(id, totals, status, null, failedDocuments);
   }
 
-  fail(id: string, totals: IngestTotals, error: Error): void {
-    this.#updateFinished(id, totals, "failed", error.message);
+  fail(id: string, totals: IngestTotals, error: Error, failedDocuments: number): void {
+    this.#updateFinished(id, totals, "failed", error.message, failedDocuments);
   }
 
   get(id: string): IngestRunRecord | null {
@@ -118,6 +132,7 @@ export class SqliteIngestRunStore implements IngestRunStore {
       cardsCreated: row.cards_created,
       cardsMerged: row.cards_merged,
       skipped: row.skipped,
+      failedDocuments: notes.failedDocuments,
       startedAt: row.started_at,
       finishedAt: row.finished_at,
       error: notes.error,
@@ -127,8 +142,9 @@ export class SqliteIngestRunStore implements IngestRunStore {
   #updateFinished(
     id: string,
     totals: IngestTotals,
-    status: "completed" | "failed",
+    status: "completed" | "completed-with-errors" | "failed",
     error: string | null,
+    failedDocuments: number,
   ): void {
     const result = this.#database
       .prepare(
@@ -143,15 +159,19 @@ export class SqliteIngestRunStore implements IngestRunStore {
         totals.cardsMerged,
         totals.skipped,
         this.#clock(),
-        encodeNotes(status, error),
+        encodeNotes(status, error, failedDocuments),
         id,
       );
     if (result.changes !== 1) throw new Error(`Unknown ingest run: ${id}`);
   }
 }
 
-function encodeNotes(status: RunNotes["status"], error: string | null): string {
-  return JSON.stringify({ status, error } satisfies RunNotes);
+function encodeNotes(
+  status: RunNotes["status"],
+  error: string | null,
+  failedDocuments: number,
+): string {
+  return JSON.stringify({ status, error, failedDocuments } satisfies RunNotes);
 }
 
 function decodeNotes(raw: string | null, runId: string): RunNotes {
@@ -162,13 +182,25 @@ function decodeNotes(raw: string | null, runId: string): RunNotes {
   } catch (error) {
     throw new Error(`Ingest run ${runId} has invalid notes JSON`, { cause: error });
   }
-  if (!isRecord(value) || !["running", "completed", "failed"].includes(String(value.status))) {
+  if (!isRecord(value) || !RUN_STATUSES.includes(value.status as RunNotes["status"])) {
     throw new Error(`Ingest run ${runId} has an invalid status`);
   }
   if (value.error !== null && typeof value.error !== "string") {
     throw new Error(`Ingest run ${runId} has an invalid error field`);
   }
-  return { status: value.status as RunNotes["status"], error: value.error };
+  // failedDocuments はこの migration 以降の書き込みにだけ存在する。旧行は 0 扱い。
+  // undefined 以外は非負整数を要求する (NaN や小数を API 応答へ流さない)。
+  if (
+    value.failedDocuments !== undefined
+    && !(Number.isSafeInteger(value.failedDocuments) && (value.failedDocuments as number) >= 0)
+  ) {
+    throw new Error(`Ingest run ${runId} has an invalid failedDocuments field`);
+  }
+  return {
+    status: value.status as RunNotes["status"],
+    error: value.error,
+    failedDocuments: (value.failedDocuments as number | undefined) ?? 0,
+  };
 }
 
 function parseSources(raw: string): SourceName[] {

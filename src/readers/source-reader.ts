@@ -62,7 +62,11 @@ export interface ListDocumentsOptions {
 
 export interface SourceDocumentBatch {
   readonly documents: readonly SourceDocumentDescriptor[];
-  /** Persist only after every document in this batch completed successfully. */
+  /**
+   * Persist only after the whole batch was walked. Documents that failed are
+   * isolated into `ingest_failures` and replayed by `--retry-failed`, so the
+   * cursor is allowed to move past them (spec/feature/operations.md §4).
+   */
   readonly nextCursor: ReaderCursor | null;
 }
 
