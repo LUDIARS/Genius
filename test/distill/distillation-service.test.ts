@@ -47,6 +47,7 @@ class FakeCardGateway implements DistillationCardGateway {
       ...input,
       id: `01TEST${this.saved.length}`,
       supersededBy: null,
+      retiredAt: null,
       createdAt: 1,
       updatedAt: 1,
     };
@@ -288,6 +289,7 @@ function cloneCard(value: DistilledCard, id: string): CloneCard {
     sourceRef: "memory:old.md#card-001",
     sourceTier: 1,
     supersededBy: null,
+    retiredAt: null,
     createdAt: 1,
     updatedAt: 1,
   };

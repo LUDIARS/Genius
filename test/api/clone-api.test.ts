@@ -302,6 +302,8 @@ describe("clone API", () => {
       tiers: Record<string, number>;
       lastIngestAt: number | null;
       superseded: number;
+      retired: number;
+      active: number;
       unresolvedIngestFailures: number;
     };
     const rejectedExport = await app.request("/api/clone/export");
@@ -314,6 +316,8 @@ describe("clone API", () => {
     expect(stats.tiers).toEqual({ "1": 2, "2": 1 });
     expect(stats.lastIngestAt).toBe(42);
     expect(stats.superseded).toBe(1);
+    expect(stats.retired).toBe(0);
+    expect(stats.active).toBe(2);
     expect(stats.unresolvedIngestFailures).toBe(0);
     expect(rejectedExport.status).toBe(400);
     expect(exported.cards).toHaveLength(1);
@@ -569,6 +573,188 @@ describe("clone API", () => {
       { changedFields: ["category"], changedBy: "api" },
     ]);
   });
+
+  it("sorts the card list by created time or confidence in both directions", async () => {
+    const first = await createCard("work", "public", "alpha first", "fixture:first");
+    const second = await createCard("work", "public", "alpha second", "fixture:second");
+    const third = await createCard("work", "public", "alpha third", "fixture:third");
+    // Confidence order differs from creation order so the two sorts cannot be
+    // satisfied by the same sequence.
+    await cards.patch(first.id, { confidence: 0.5 }, "cli");
+    await cards.patch(second.id, { confidence: 0.1 }, "cli");
+    await cards.patch(third.id, { confidence: 0.9 }, "cli");
+    // Cards created inside the same millisecond would tie on created_at and
+    // fall back to the random ULID tail; pin distinct timestamps instead.
+    setCreatedAt([first.id, second.id, third.id]);
+    const app = createApp(services);
+
+    const ids = async (queryString: string) => {
+      const response = await app.request(`/api/clone/cards?${queryString}`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { cards: Array<{ id: string }> };
+      return body.cards.map((card) => card.id);
+    };
+
+    await expect(ids("sort=createdAt&order=asc")).resolves.toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+    await expect(ids("sort=createdAt&order=desc")).resolves.toEqual([
+      third.id,
+      second.id,
+      first.id,
+    ]);
+    await expect(ids("sort=confidence&order=desc")).resolves.toEqual([
+      third.id,
+      first.id,
+      second.id,
+    ]);
+    await expect(ids("sort=confidence&order=asc")).resolves.toEqual([
+      second.id,
+      first.id,
+      third.id,
+    ]);
+    // Default order is unchanged: newest first.
+    await expect(ids("limit=10")).resolves.toEqual([third.id, second.id, first.id]);
+    expect((await app.request("/api/clone/cards?sort=situation")).status).toBe(400);
+    expect((await app.request("/api/clone/cards?order=sideways")).status).toBe(400);
+  });
+
+  it("hides superseded cards from the list unless includeSuperseded is requested", async () => {
+    const replacement = await createCard("work", "public", "alpha new", "fixture:new");
+    const retired = await createCard("work", "public", "alpha old", "fixture:retired");
+    cards.markSuperseded(retired.id, replacement.id);
+    const app = createApp(services);
+
+    const hidden = (await (await app.request("/api/clone/cards")).json()) as {
+      cards: Array<{ id: string }>;
+    };
+    const shownResponse = await app.request("/api/clone/cards?includeSuperseded=true");
+    const shown = (await shownResponse.json()) as { cards: Array<{ id: string }> };
+    const invalid = await app.request("/api/clone/cards?includeSuperseded=yes");
+
+    expect(hidden.cards.map((card) => card.id)).toEqual([replacement.id]);
+    expect(shownResponse.status).toBe(200);
+    expect(shown.cards.map((card) => card.id).sort()).toEqual(
+      [replacement.id, retired.id].sort(),
+    );
+    expect(invalid.status).toBe(400);
+  });
+
+  it("retires a card through PATCH and keeps it out of the list and public export", async () => {
+    const kept = await createCard("work", "public", "alpha kept", "fixture:kept");
+    const target = await createCard("work", "public", "alpha stale", "fixture:stale");
+    const app = createApp(services);
+    const patchRetired = async (retired: boolean) =>
+      app.request(`/api/clone/cards/${target.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ retired, changedBy: "ui" }),
+      });
+    const listedIds = async (queryString: string) => {
+      const response = await app.request(`/api/clone/cards?${queryString}`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { cards: Array<{ id: string }> };
+      return body.cards.map((card) => card.id).sort();
+    };
+    const exportedIds = async () => {
+      const response = await app.request("/api/clone/export?visibility=public");
+      const body = (await response.json()) as { cards: Array<{ id: string }> };
+      return body.cards.map((card) => card.id).sort();
+    };
+
+    const retiredResponse = await patchRetired(true);
+    const retired = (await retiredResponse.json()) as { retiredAt: number | null };
+
+    expect(retiredResponse.status).toBe(200);
+    expect(retired.retiredAt).toBeGreaterThan(0);
+    await expect(listedIds("limit=10")).resolves.toEqual([kept.id]);
+    await expect(listedIds("limit=10&includeRetired=true")).resolves.toEqual(
+      [kept.id, target.id].sort(),
+    );
+    // The retired card is excluded from the public export even though it is public.
+    await expect(exportedIds()).resolves.toEqual([kept.id]);
+    expect((await app.request("/api/clone/cards?includeRetired=yes")).status).toBe(400);
+
+    const detail = (await (
+      await app.request(`/api/clone/cards/${target.id}`)
+    ).json()) as { retiredAt: number | null };
+    expect(detail.retiredAt).toBe(retired.retiredAt);
+
+    const reactivatedResponse = await patchRetired(false);
+    const reactivated = (await reactivatedResponse.json()) as { retiredAt: number | null };
+
+    expect(reactivatedResponse.status).toBe(200);
+    expect(reactivated.retiredAt).toBeNull();
+    await expect(listedIds("limit=10")).resolves.toEqual([kept.id, target.id].sort());
+    await expect(exportedIds()).resolves.toEqual([kept.id, target.id].sort());
+  });
+
+  it("keeps a retired card out of query results", async () => {
+    const kept = await createCard("work", "public", "alpha kept", "fixture:query-kept");
+    const retired = await createCard("work", "public", "alpha stale", "fixture:query-stale");
+    const app = createApp(services);
+
+    await app.request(`/api/clone/cards/${retired.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ retired: true }),
+    });
+    const response = await app.request("/api/clone/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "alpha", k: 5 }),
+    });
+    const body = (await response.json()) as { cards: Array<{ id: string }> };
+
+    expect(response.status).toBe(200);
+    expect(body.cards.map((card) => card.id)).toEqual([kept.id]);
+  });
+
+  it("returns the supersede chain in both directions", async () => {
+    const oldest = await createCard("work", "public", "alpha oldest", "fixture:oldest");
+    const middle = await createCard("work", "public", "alpha middle", "fixture:middle");
+    const newest = await createCard("work", "public", "alpha newest", "fixture:newest");
+    const sibling = await createCard("work", "public", "alpha sibling", "fixture:sibling");
+    cards.markSuperseded(oldest.id, middle.id);
+    cards.markSuperseded(sibling.id, middle.id);
+    cards.markSuperseded(middle.id, newest.id);
+    const app = createApp(services);
+
+    const response = await app.request(`/api/clone/cards/${middle.id}/supersede-chain`);
+    const chain = (await response.json()) as {
+      card: { id: string };
+      supersedes: Array<{ id: string }>;
+      supersededBy: Array<{ id: string }>;
+    };
+    const leafResponse = await app.request(`/api/clone/cards/${newest.id}/supersede-chain`);
+    const leaf = (await leafResponse.json()) as {
+      supersedes: Array<{ id: string }>;
+      supersededBy: Array<{ id: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(chain.card.id).toBe(middle.id);
+    expect(chain.supersedes.map((card) => card.id).sort()).toEqual(
+      [oldest.id, sibling.id].sort(),
+    );
+    expect(chain.supersededBy.map((card) => card.id)).toEqual([newest.id]);
+    // The newest card transitively replaced all three retired cards.
+    expect(leaf.supersedes.map((card) => card.id).sort()).toEqual(
+      [middle.id, oldest.id, sibling.id].sort(),
+    );
+    expect(leaf.supersededBy).toEqual([]);
+    expect((await app.request("/api/clone/cards/does-not-exist/supersede-chain")).status).toBe(404);
+  });
+
+  /** Assigns strictly increasing created_at values in the given card order. */
+  function setCreatedAt(ids: readonly string[]): void {
+    const update = database.prepare("UPDATE clone_cards SET created_at = ? WHERE id = ?");
+    ids.forEach((id, index) => {
+      update.run(1_000 + index, id);
+    });
+  }
 
   async function createCard(
     domain: QueryInput["domain"] & string,

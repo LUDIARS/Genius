@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { CloneStats, PublicExportCard } from "../api/contracts.js";
+import { activeCardClause } from "../cards/active-card-sql.js";
 import type { CardDomain, CardVisibility } from "../domain/card.js";
 
 interface CountRow {
@@ -65,6 +66,12 @@ export class StatsRepository {
       .prepare("SELECT MAX(finished_at) AS last_ingest_at FROM distill_runs")
       .get() as LastIngestRow;
     const superseded = this.#count("SELECT COUNT(*) AS count FROM clone_cards WHERE superseded_by IS NOT NULL");
+    const retired = this.#count("SELECT COUNT(*) AS count FROM clone_cards WHERE retired_at IS NOT NULL");
+    // The active count is the one aggregate that must follow the shared
+    // definition: both markers exclude a card from it.
+    const active = this.#count(
+      `SELECT COUNT(*) AS count FROM clone_cards WHERE ${activeCardClause()}`,
+    );
     const total = this.#count("SELECT COUNT(*) AS count FROM clone_cards");
     const unresolvedIngestFailures = this.#count(
       "SELECT COUNT(*) AS count FROM ingest_failures WHERE resolved_at IS NULL",
@@ -74,6 +81,8 @@ export class StatsRepository {
       tiers,
       lastIngestAt: lastIngest.last_ingest_at,
       superseded,
+      retired,
+      active,
       total,
       unresolvedIngestFailures,
     };
@@ -90,7 +99,7 @@ export class StatsRepository {
         `SELECT id, domain, visibility, category, situation, judgment, rationale,
                 tags, source_tier, confidence, created_at, updated_at
            FROM clone_cards
-          WHERE visibility = 'public' AND superseded_by IS NULL${categoryClause}
+          WHERE visibility = 'public' AND ${activeCardClause()}${categoryClause}
           ORDER BY created_at ASC, id ASC`,
       )
       .all(...parameters) as ExportRow[];

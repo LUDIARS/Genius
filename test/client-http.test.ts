@@ -36,6 +36,7 @@ const CARD = {
   sourceTier: 1 as const,
   confidence: 0.9,
   supersededBy: null,
+  retiredAt: null,
   createdAt: 1,
   updatedAt: 1,
   score: 0.87,

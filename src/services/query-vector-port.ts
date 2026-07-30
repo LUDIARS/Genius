@@ -1,3 +1,4 @@
+import { activeCardConditions } from "../cards/active-card-sql.js";
 import { CLONE_CARD_COLUMNS, mapCloneCardRow, type CloneCardRow } from "../cards/card-row.js";
 import type { GeniusDatabase } from "../db/database.js";
 import { domainSchema, visibilitySchema } from "../domain/card.js";
@@ -25,7 +26,7 @@ export class SqliteQueryVectorPort implements QueryVectorPort {
     if (!Number.isSafeInteger(options.limit) || options.limit <= 0) {
       throw new Error("Query candidate limit must be a positive integer");
     }
-    const clauses = ["cards.superseded_by IS NULL"];
+    const clauses = activeCardConditions("cards");
     const parameters: Array<string | number | Buffer> = [
       encodeVector(vector, this.#dimension),
       options.limit,

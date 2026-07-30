@@ -19,6 +19,7 @@ const services: ApiServices = {
     async get() { return null; },
     async create() { throw new Error("create must not run for rejected input"); },
     async patch() { throw new Error("patch must not run for rejected input"); },
+    async supersedeChain() { return null; },
   },
   categories: {
     async list() { return []; },
@@ -42,6 +43,8 @@ const services: ApiServices = {
         tiers: { "1": 0, "2": 0 },
         lastIngestAt: null,
         superseded: 0,
+        retired: 0,
+        active: 0,
         total: 0,
         unresolvedIngestFailures: 0,
       };

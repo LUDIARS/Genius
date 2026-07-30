@@ -36,6 +36,7 @@ function resultForSourceRefs(sourceRefs: readonly string[]): GeniusQueryResult {
       sourceTier: 1,
       confidence: 1,
       supersededBy: null,
+      retiredAt: null,
       createdAt: 1,
       updatedAt: 1,
       score: 1,

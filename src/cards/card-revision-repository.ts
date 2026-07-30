@@ -77,9 +77,12 @@ export class CardRevisionRepository {
   public listByCard(cardId: string): CardRevision[] {
     const rows = this.#database
       .prepare<[string], CardRevisionRow>(
+        // Two revisions can share a millisecond (retire → un-retire in one test
+        // or one script), and the ULID tiebreak is random inside a millisecond.
+        // rowid keeps the trail in insertion order, which is the audit order.
         `SELECT id, card_id, changed_fields, changed_by, changed_at
            FROM clone_card_revisions WHERE card_id = ?
-          ORDER BY changed_at ASC, id ASC`,
+          ORDER BY changed_at ASC, rowid ASC`,
       )
       .all(cardId);
     return rows.map(mapRevisionRow);

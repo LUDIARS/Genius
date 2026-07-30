@@ -229,17 +229,44 @@ run が `failed` / `completed-with-errors` で終わると、`genius.config.json
 | GET | `/healthz` | DB カード数と Ollama/model の readiness |
 | POST | `/api/clone/query` | ローカル embedding と sqlite-vec でカード検索 |
 | POST | `/api/clone/query-batch` | 複数クエリの embedding を 1 回の Ollama 往復に集約 (上限 50 件、p95 改善策) |
-| GET | `/api/clone/cards` | `domain`、`visibility`、`tag`、`q`、pagination 付き一覧 |
+| GET | `/api/clone/cards` | `domain`、`visibility`、`category`、`tag`、`q`、sort/order、`includeSuperseded`、`includeRetired`、pagination 付き一覧 |
 | GET | `/api/clone/cards/:id` | カード取得 |
+| GET | `/api/clone/cards/:id/supersede-chain` | supersede 履歴 (置き換えた旧カード / 置換カード列) |
 | POST | `/api/clone/cards` | 手動カード追加 |
-| PATCH | `/api/clone/cards/:id` | 本文・象限・supersede 更新。必要時は再 embedding |
+| PATCH | `/api/clone/cards/:id` | 本文・象限・supersede・retire (`retired: true\|false`) 更新。必要時は再 embedding |
 | POST | `/api/clone/ingest/run` | 非同期 ingest 開始 |
 | GET | `/api/clone/ingest/runs/:id` | ingest 状態取得 (`status` は 4 値 union + `unresolvedFailures`) |
-| GET | `/api/clone/stats` | 象限・tier・supersede・最終 ingest・未解決失敗件数の集計 |
-| GET | `/api/clone/export?visibility=public` | active public カード export |
+| GET | `/api/clone/stats` | 象限・tier・supersede・retire・active・最終 ingest・未解決失敗件数の集計 |
+| GET | `/api/clone/export?visibility=public` | active public カード export (supersede 済み・retire 済みは除外) |
 
-DELETE API はありません。履歴は `supersededBy` で保持します。詳細な body と response は
-`spec/interface/api.md` を参照してください。
+DELETE API はありません。カードを外すのは置換 (`supersededBy`) か置換先なしの
+retire (`retiredAt`) で、どちらも行は残ります。「活性カード」の判定
+(`superseded_by IS NULL AND retired_at IS NULL`) は `src/cards/active-card-sql.ts`
+に一元定義されており、検索・集計・公開 export はすべてそこを参照します。詳細な
+body と response は `spec/interface/api.md` を参照してください。
+
+## 棚卸し WebUI (`/ui/`)
+
+サービス起動後、`http://127.0.0.1:<port>/ui/` でカード棚卸し画面を開けます
+(port は `genius.config.json`。ハードコードしない)。ビルド手順は不要で、
+`ui/` の素の HTML/CSS/ES modules をそのまま配信します (`npm run build` の対象外)。
+
+できること: 象限・カテゴリー・タグ・全文フィルタと作成日/confidence ソート、
+supersede 済み / retire 済みの表示切替、カード詳細 (本文・sourceRef・supersede
+チェーン)、本文/カテゴリー編集、象限変更、supersede (既存カードで置換 /
+新規カードで置換 / 置換リンク解除)、retire (置換先なしの非活性化 / 復活)、
+手動カード追加、カテゴリー追加。
+
+注意点:
+
+- **公開禁止**。認証はなく、bind は `127.0.0.1` 固定です。リバースプロキシ等で
+  外部へ露出させないでください。
+- sensitive→public 昇格はサーバ側で二重チェックが再実行され、拒否されると 409 に
+  なります。UI は拒否理由をそのまま表示し、成功したようには見せません。
+- UI からの更新は `changedBy: "ui"` として `clone_card_revisions` に記録されます
+  (記録されるのは変更された列名のみ)。
+- ブラウザ経由の防御 (CORS 非提供・更新系の `Content-Type: application/json` 必須・
+  非 loopback `Origin` の拒否) は `spec/interface/api.md` を参照。
 
 ## MCP server
 

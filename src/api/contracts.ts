@@ -7,6 +7,8 @@ import type {
   DistilledCard,
   ScoredCloneCard,
 } from "../domain/card.js";
+import type { CardSortField, CardSortOrder } from "../cards/card-repository.js";
+import type { SupersedeChain } from "../cards/supersede-chain.js";
 import type { CardCategory, CreateCategoryInput } from "../domain/category.js";
 import type { IngestOptions, IngestRunRecord } from "../ingest/ingest-contracts.js";
 import type { SourceName } from "../readers/source-reader.js";
@@ -40,6 +42,12 @@ export interface ListCardsInput {
   q?: string;
   limit: number;
   offset: number;
+  /** Superseded cards are hidden unless the caller asks for them. */
+  includeSuperseded: boolean;
+  /** Retired cards are hidden unless the caller asks for them. */
+  includeRetired: boolean;
+  sort: CardSortField;
+  order: CardSortOrder;
 }
 
 export interface ManualCardInput extends DistilledCard {
@@ -52,6 +60,10 @@ export interface CloneStats {
   tiers: Record<"1" | "2", number>;
   lastIngestAt: number | null;
   superseded: number;
+  /** Cards retired without a replacement (`retired_at IS NOT NULL`). */
+  retired: number;
+  /** Cards that are neither superseded nor retired — what query and export see. */
+  active: number;
   total: number;
   /** ingest_failures の resolved_at IS NULL 件数 (取りこぼしの可視化)。 */
   unresolvedIngestFailures: number;
@@ -84,6 +96,8 @@ export interface ApiServices {
     get(id: string): Promise<CloneCard | null>;
     create(input: ManualCardInput): Promise<CloneCard>;
     patch(id: string, patch: CardPatch, changedBy: CardChangeOrigin): Promise<CloneCard | null>;
+    /** Retirement history around a card, or `null` when the card is unknown. */
+    supersedeChain(id: string): Promise<SupersedeChain | null>;
   };
   categories: {
     list(): Promise<CardCategory[]>;

@@ -13,6 +13,7 @@ export interface CloneCardRow {
   source_tier: 1 | 2;
   confidence: number;
   superseded_by: string | null;
+  retired_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -47,6 +48,7 @@ export function mapCloneCardRow(row: CloneCardRow): CloneCard {
     sourceTier: row.source_tier,
     confidence: row.confidence,
     supersededBy: row.superseded_by,
+    retiredAt: row.retired_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -65,6 +67,7 @@ export const CLONE_CARD_COLUMNS = `
   source_tier,
   confidence,
   superseded_by,
+  retired_at,
   created_at,
   updated_at
 `;

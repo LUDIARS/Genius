@@ -8,6 +8,7 @@ import {
   type CreateCardInput,
 } from "../domain/card.js";
 import type { GeniusDatabase } from "../db/database.js";
+import { notRetiredCondition, notSupersededCondition } from "./active-card-sql.js";
 import {
   CLONE_CARD_COLUMNS,
   mapCloneCardRow,
@@ -19,6 +20,15 @@ export interface CardRepositoryOptions {
   clock?: () => number;
 }
 
+/** Sortable list columns, whitelisted so no caller value reaches the SQL text. */
+const SORT_COLUMNS = {
+  createdAt: "created_at",
+  confidence: "confidence",
+} as const;
+
+export type CardSortField = keyof typeof SORT_COLUMNS;
+export type CardSortOrder = "asc" | "desc";
+
 export interface CardListFilters {
   domain?: "work" | "hobby";
   visibility?: "public" | "sensitive";
@@ -28,16 +38,37 @@ export interface CardListFilters {
   limit?: number;
   offset?: number;
   includeSuperseded?: boolean;
+  /** Retired cards are excluded unless this is set, mirroring includeSuperseded. */
+  includeRetired?: boolean;
+  /** Default `createdAt` — the historical list order. */
+  sort?: CardSortField;
+  /** Default `desc` — newest / most confident first. */
+  order?: CardSortOrder;
 }
 
 export interface CardCountOptions {
   includeSuperseded?: boolean;
+  includeRetired?: boolean;
 }
 
 function assertPaginationInteger(value: number, name: string, minimum: number): void {
   if (!Number.isSafeInteger(value) || value < minimum) {
     throw new Error(`${name} must be an integer >= ${minimum}`);
   }
+}
+
+/**
+ * Builds the ORDER BY clause from the whitelisted sort field. `id` is appended
+ * as a tiebreaker so paging stays stable when the sort column repeats.
+ */
+function buildOrderBy(sort: CardSortField, order: CardSortOrder): string {
+  const column = SORT_COLUMNS[sort];
+  if (column === undefined) throw new Error(`Unsupported card sort field: ${sort}`);
+  if (order !== "asc" && order !== "desc") {
+    throw new Error(`Unsupported card sort order: ${order}`);
+  }
+  const direction = order.toUpperCase();
+  return `${column} ${direction}, id ${direction}`;
 }
 
 function normalizeCreateInput(input: CreateCardInput): CreateCardInput {
@@ -59,13 +90,23 @@ function assertCloneCard(card: CloneCard): CloneCard {
   if (card.supersededBy === card.id) {
     throw new Error("a card cannot supersede itself");
   }
+  assertRetiredAt(card.retiredAt);
   return {
     ...normalized,
     id: card.id,
     supersededBy: card.supersededBy,
+    retiredAt: card.retiredAt,
     createdAt: card.createdAt,
     updatedAt: card.updatedAt,
   };
+}
+
+/** `null` = active; anything else must be a usable epoch-millisecond value. */
+function assertRetiredAt(retiredAt: number | null): void {
+  if (retiredAt === null) return;
+  if (!Number.isSafeInteger(retiredAt) || retiredAt <= 0) {
+    throw new Error("card retiredAt must be a positive epoch-millisecond integer or null");
+  }
 }
 
 export class CardRepository {
@@ -86,6 +127,7 @@ export class CardRepository {
       ...normalized,
       id: this.#idFactory(),
       supersededBy: null,
+      retiredAt: null,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -104,8 +146,9 @@ export class CardRepository {
       .prepare(
         `INSERT INTO clone_cards(
           id, domain, visibility, category, situation, judgment, rationale, tags,
-          source_ref, source_tier, confidence, superseded_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          source_ref, source_tier, confidence, superseded_by, retired_at,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         normalized.id,
@@ -120,6 +163,7 @@ export class CardRepository {
         normalized.sourceTier,
         normalized.confidence,
         normalized.supersededBy,
+        normalized.retiredAt,
         normalized.createdAt,
         normalized.updatedAt,
       );
@@ -133,7 +177,7 @@ export class CardRepository {
         `UPDATE clone_cards SET
           domain = ?, visibility = ?, category = ?, situation = ?, judgment = ?,
           rationale = ?, tags = ?, source_ref = ?, source_tier = ?, confidence = ?,
-          superseded_by = ?, created_at = ?, updated_at = ?
+          superseded_by = ?, retired_at = ?, created_at = ?, updated_at = ?
         WHERE id = ?`,
       )
       .run(
@@ -148,6 +192,7 @@ export class CardRepository {
         normalized.sourceTier,
         normalized.confidence,
         normalized.supersededBy,
+        normalized.retiredAt,
         normalized.createdAt,
         normalized.updatedAt,
         normalized.id,
@@ -194,6 +239,7 @@ export class CardRepository {
       ...card,
       ...distilled,
       supersededBy,
+      retiredAt: this.#nextRetiredAt(card, patch.retired),
       updatedAt: this.#clock(),
     };
   }
@@ -226,7 +272,10 @@ export class CardRepository {
       clauses.push("category = ?");
       parameters.push(category);
     }
-    if (!filters.includeSuperseded) clauses.push("superseded_by IS NULL");
+    // The two inactive markers are filtered independently so the UI can review
+    // superseded and retired cards separately (spec/feature/operations.md §5).
+    if (!filters.includeSuperseded) clauses.push(notSupersededCondition());
+    if (!filters.includeRetired) clauses.push(notRetiredCondition());
     if (filters.tag !== undefined) {
       const tag = filters.tag.trim();
       if (tag === "") throw new Error("tag must not be empty");
@@ -241,15 +290,28 @@ export class CardRepository {
       parameters.push(like, like, like);
     }
     const where = clauses.length === 0 ? "" : `WHERE ${clauses.join(" AND ")}`;
+    const orderBy = buildOrderBy(filters.sort ?? "createdAt", filters.order ?? "desc");
     parameters.push(limit, offset);
     const rows = this.#database
       .prepare<unknown[], CloneCardRow>(
         `SELECT ${CLONE_CARD_COLUMNS}
          FROM clone_cards ${where}
-         ORDER BY created_at DESC, id DESC
+         ORDER BY ${orderBy}
          LIMIT ? OFFSET ?`,
       )
       .all(...parameters);
+    return rows.map(mapCloneCardRow);
+  }
+
+  /** Cards retired in favour of the given card (`superseded_by` = id). */
+  public listSupersededByCardId(id: string): CloneCard[] {
+    const rows = this.#database
+      .prepare<[string], CloneCardRow>(
+        `SELECT ${CLONE_CARD_COLUMNS}
+         FROM clone_cards WHERE superseded_by = ?
+         ORDER BY created_at ASC, id ASC`,
+      )
+      .all(id);
     return rows.map(mapCloneCardRow);
   }
 
@@ -273,12 +335,26 @@ export class CardRepository {
   }
 
   public count(options: CardCountOptions = {}): number {
-    const where = options.includeSuperseded ? "" : " WHERE superseded_by IS NULL";
+    const conditions: string[] = [];
+    if (!options.includeSuperseded) conditions.push(notSupersededCondition());
+    if (!options.includeRetired) conditions.push(notRetiredCondition());
+    const where = conditions.length === 0 ? "" : ` WHERE ${conditions.join(" AND ")}`;
     const row = this.#database
       .prepare<[], { count: number }>(`SELECT count(*) AS count FROM clone_cards${where}`)
       .get();
     if (row === undefined) throw new Error("Card count query returned no row");
     return row.count;
+  }
+
+  /**
+   * Resolves the stored retirement timestamp from the caller's intent. Retiring
+   * an already retired card keeps the original timestamp — a repeated retire is
+   * a no-op, not a fresh retirement — and reactivation clears it.
+   */
+  #nextRetiredAt(card: CloneCard, retired: boolean | undefined): number | null {
+    if (retired === undefined) return card.retiredAt;
+    if (!retired) return null;
+    return card.retiredAt ?? this.#clock();
   }
 
   #assertSupersedeChain(cardId: string, replacementId: string | null): void {

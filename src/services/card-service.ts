@@ -5,6 +5,7 @@ import {
   CardRevisionRepository,
   type CardRevision,
 } from "../cards/card-revision-repository.js";
+import { resolveSupersedeChain, type SupersedeChain } from "../cards/supersede-chain.js";
 import {
   cardEmbeddingText,
   type CardChangeOrigin,
@@ -35,7 +36,7 @@ export class CardPromotionRejectedError extends Error {
 }
 
 /** clone_cards columns whose PATCH changes are recorded as a revision. */
-const REVISION_TRACKED_COLUMNS = ["domain", "visibility", "category"] as const;
+const REVISION_TRACKED_COLUMNS = ["domain", "visibility", "category", "retired_at"] as const;
 
 export class CardService {
   readonly #database: GeniusDatabase;
@@ -67,13 +68,21 @@ export class CardService {
       ...(input.category === undefined ? {} : { category: input.category }),
       ...(input.tag === undefined ? {} : { tag: input.tag }),
       ...(input.q === undefined ? {} : { query: input.q }),
+      includeSuperseded: input.includeSuperseded,
+      includeRetired: input.includeRetired,
       limit: input.limit,
       offset: input.offset,
+      sort: input.sort,
+      order: input.order,
     });
   }
 
   async get(id: string): Promise<CloneCard | null> {
     return this.#cards.getById(id);
+  }
+
+  async supersedeChain(id: string): Promise<SupersedeChain | null> {
+    return resolveSupersedeChain(this.#cards, id);
   }
 
   async create(input: ManualCardInput): Promise<CloneCard> {
@@ -207,6 +216,9 @@ export class CardService {
     return this.#revisions.listByCard(cardId);
   }
 
+  // Only the supersede link is inspected here: a retired card may still be
+  // superseded later (and vice versa), so `retiredAt` is deliberately not a
+  // precondition (spec/feature/operations.md Section 5).
   #linkSuperseded(cardId: string, replacementId: string): void {
     const replacement = this.#cards.getById(replacementId);
     if (!replacement) throw new Error(`Replacement card not found: ${replacementId}`);
@@ -237,5 +249,6 @@ function changedCardColumns(before: CloneCard, after: CloneCard): string[] {
   if (JSON.stringify(before.tags) !== JSON.stringify(after.tags)) changed.push("tags");
   if (before.confidence !== after.confidence) changed.push("confidence");
   if (before.supersededBy !== after.supersededBy) changed.push("superseded_by");
+  if (before.retiredAt !== after.retiredAt) changed.push("retired_at");
   return changed;
 }

@@ -1,5 +1,6 @@
 import { domainSchema, visibilitySchema, type CloneCard } from "../domain/card.js";
 import type { GeniusDatabase } from "../db/database.js";
+import { activeCardConditions } from "../cards/active-card-sql.js";
 import {
   CLONE_CARD_COLUMNS,
   mapCloneCardRow,
@@ -78,7 +79,7 @@ export class VectorStore {
     const candidateCount = k * 4;
     if (!Number.isSafeInteger(candidateCount)) throw new EmbeddingError("k is too large");
 
-    const clauses = ["cards.superseded_by IS NULL"];
+    const clauses = activeCardConditions("cards");
     const parameters: unknown[] = [
       encodeVector(queryVector, this.dimension),
       candidateCount,

@@ -11,7 +11,17 @@ services:
     runtime: node
     cwd: ${ARS_ROOT}/Genius
     command: npm run start
-    autostart: false
+    # 毎朝の ingest (Concordia Timer Delegation) は CLI から loopback の
+    # POST /api/clone/ingest/run を叩くため、サービスが落ちていると取り込み自体が
+    # 起動しない。よって常時起動 + 異常終了時の再起動を Excubitor に任せる。
+    # 前提: `npm run start` は `node dist/server.js` なので、この host では
+    # `npm run build` 済みの `dist/` と `genius.config.json` が存在すること
+    # (どちらか欠けると起動即失敗 → on-failure が再起動を繰り返す)。
+    # 注意: run 単位の失敗 (2026-07-20 の run が 10 日間気付かれなかった件) は
+    # プロセスが生きたままでも起きるため、autostart/restart では検知できない。
+    # その対策は spec/feature/operations.md §4 (通知 + completed-with-errors)。
+    autostart: true
+    restart_policy: on-failure
     health:
       type: http
       url: http://localhost:4230/healthz

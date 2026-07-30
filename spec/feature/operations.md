@@ -171,14 +171,50 @@ status: draft (2026-07-30 neco 方針決定の反映)
     (既存の `loopback-url.ts` の判定を再利用できる)。
 - 機能:
   - 一覧: 象限・カテゴリー・タグ・全文 (`q`) フィルタ、作成日/confidence ソート、
-    supersede 済みの表示切替
+    supersede 済み / retire 済みの表示切替 (独立した 2 トグル)
   - 詳細: カード本文・sourceRef・supersede チェーンの表示
   - 編集: situation/judgment/rationale/tags/category の修正 (PATCH 経由)
   - 象限変更: visibility/domain の変更 (昇格時は二重チェック再実行 — §2)
-  - supersede: 旧カードを選んで新カードで置き換える、または単純に非活性化
+  - supersede: 旧カードを選んで新カードで置き換える
+  - retire: 置換先なしで単純に非活性化する / 復活させる (supersede とは独立)
   - 手動カード追加 (sourceRef 重複チェック付き — 既存の重複排除仕様に従う)
 - 新規 API は既存 REST の拡張のみで賄う (一覧ソート追加・supersede チェーン取得・
   categories CRUD)。DELETE は引き続き作らない。
+
+### 置換先なし retire の実装 (T8 + neco 追加指示 2026-07-30)
+
+T8 時点では「単純に非活性化」を supersede の 3 操作 (既存カード ID で置換 /
+新規カードを作って置換 / 置換リンク解除) に留め、置換先なしの retire は
+スキーマ変更を伴う別タスクとしていた。neco の追加指示により**スキーマから
+実装済み**。決定と形は以下。
+
+- **状態は列 `clone_cards.retired_at INTEGER NULL`** (migration 004。NULL = 活性)。
+  boolean フラグにしない理由: `superseded_by` と同じ「無ければ活性」形なので活性
+  条件が `IS NULL` 2 本で済み既存行の backfill が不要、かつ
+  `clone_card_revisions` は列名しか持たない (§2) ため boolean だと
+  「いつ retire したか」がどこにも残らない。索引は retire 済みのみを対象にした
+  部分索引 (活性側は全行に一致し索引の利得がない)。
+- **活性条件の一元化**: 除外条件が 2 条件になり波及先が
+  `card-repository` (list / count) / `vector-store` / `query-vector-port` /
+  `distillation-card-gateway` / `stats-repository` (集計 + 公開 export) と広い。
+  条件のコピーを増やさないよう `src/cards/active-card-sql.ts` に
+  `notSupersededCondition` / `notRetiredCondition` / `activeCardConditions` /
+  `activeCardClause` を置き、全箇所がそこを参照する (テーブル別名は引数で吸収)。
+  1 箇所漏れると retire 済みカードが検索や**公開 export** に戻るため、
+  条件のベタ書きを禁止する。
+- **API**: `PATCH /api/clone/cards/:id` に `retired: true|false` (意図) を追加。
+  時刻はサーバの clock が打つ (クライアントに `retiredAt` を渡させない —
+  backdate や不整合な状態を作れないようにする)。retire 済みへの再 retire は
+  no-op で最初の時刻を保つ。DELETE は引き続き作らない。変更は
+  `clone_card_revisions` に列名 `retired_at` として記録する。
+- **公開 export**: retire 済みは含めない。export DTO は supersede 済みと同様に
+  retire 済みを返さないため `retiredAt` 列も持たない。
+- **一覧**: `includeRetired` (既定 `false`) を `includeSuperseded` と同じ流儀で
+  追加。2 つは独立に効く (retire と supersede は共存可能で、片方を外しても
+  もう片方で非活性のままになり得る)。
+- **UI**: Supersede パネル (置換あり) と Retire パネル (置換なし) を分離し、
+  文言も「Replace with …」「Retire (no replacement) / Un-retire」と書き分ける。
+  retire 済みカードは一覧・詳細で `retired` バッジ + 行の減光で示す。
 
 ## 6. Tier 2 全量投入 (#5)
 

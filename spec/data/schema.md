@@ -19,9 +19,22 @@ DB: `data/genius.db` (better-sqlite3, WAL)。migration は番号連番 + 冪等
 | source_tier | INTEGER | 1 \| 2 |
 | confidence | REAL | 蒸留 LLM の自信 0..1 |
 | superseded_by | TEXT NULL | 統合/更新先カード id (削除の代替) |
+| retired_at | INTEGER NULL | 置換先なしで非活性化した時刻 (epoch ms)。NULL = 非 retire。`superseded_by` とは独立で、どちらか片方でも「活性」から外れる |
 | created_at / updated_at | INTEGER | epoch ms |
 
-インデックス: `(domain, visibility)`, `(superseded_by)`, `(category)`, `UNIQUE (source_ref)`。
+インデックス: `(domain, visibility)`, `(superseded_by)`, `(category)`,
+`(retired_at) WHERE retired_at IS NOT NULL` (部分索引 — 活性判定は
+`retired_at IS NULL` 側でほぼ全行に一致し索引の利得がないため、retire 済みだけを
+索引する), `UNIQUE (source_ref)`。
+
+### 「活性カード」の定義 (正)
+
+活性 = `superseded_by IS NULL AND retired_at IS NULL`。この条件は
+`src/cards/active-card-sql.ts` に**一元定義**し、一覧・件数・vector 検索・
+query port・蒸留の重複判定・公開 export はすべてそこから参照する
+(条件のコピーを増やさない — 1 箇所漏れると retire 済みカードが検索や公開 export に
+戻る)。一覧 API だけは棚卸し用途のため `includeSuperseded` / `includeRetired` で
+2 条件を個別に外せる。
 
 ## card_categories — カテゴリー統制語彙 (正)
 
@@ -40,7 +53,7 @@ DB: `data/genius.db` (better-sqlite3, WAL)。migration は番号連番 + 冪等
 
 ## clone_card_revisions — カード変更履歴
 
-PATCH による象限 (domain/visibility)・category 変更の監査記録。変更された**列名**のみ
+PATCH による象限 (domain/visibility)・category・retire (retired_at) 変更の監査記録。変更された**列名**のみ
 保持し、本文差分は保存しない (revisions 経由でセンシティブ本文を増殖させない —
 spec/feature/operations.md §2)。
 
@@ -67,7 +80,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS clone_vec USING vec0(
 
 - 埋め込み対象テキスト = `situation + "\n" + judgment + "\n" + rationale`。
 - vec0 は WHERE 句フィルタが弱いため、検索は「vec0 KNN (k×4 取得) →
-  clone_cards JOIN で象限/supersede フィルタ → 上位 k」の 2 段で行う。
+  clone_cards JOIN で象限/活性 (supersede + retire) フィルタ → 上位 k」の 2 段で行う。
 
 ## embedding_meta — 埋め込みモデル管理
 

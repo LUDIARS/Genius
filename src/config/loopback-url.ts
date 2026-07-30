@@ -25,6 +25,21 @@ export function assertLoopbackHttpUrl(value: string, label: string): URL {
   return url;
 }
 
+/**
+ * Predicate form of {@link assertLoopbackHttpUrl} for request headers. The
+ * validation error is intentionally converted into `false` (a malformed or
+ * remote `Origin` is simply "not loopback"); the caller is responsible for
+ * rejecting the request loudly (spec/feature/operations.md Section 5).
+ */
+export function isLoopbackOrigin(value: string): boolean {
+  try {
+    assertLoopbackHttpUrl(value, "Origin");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function normalizeLoopbackHttpUrl(value: string, label: string): string {
   const url = assertLoopbackHttpUrl(value, label);
   return url.toString().replace(/\/$/, "");

@@ -77,6 +77,46 @@ describe("CardRepository", () => {
     expect(repository.list({ includeSuperseded: true })).toHaveLength(2);
   });
 
+  it("excludes retired cards from list and count until they are requested", () => {
+    const active = repository.create(input());
+    const retired = repository.create(input({ sourceRef: "memory:retired.md#decision" }));
+
+    const stamped = repository.update(retired.id, { retired: true });
+
+    expect(stamped.retiredAt).toBeGreaterThan(0);
+    expect(repository.list().map((card: CloneCard) => card.id)).toEqual([active.id]);
+    expect(repository.count()).toBe(1);
+    expect(repository.list({ includeRetired: true })).toHaveLength(2);
+    expect(repository.count({ includeRetired: true })).toBe(2);
+    // Superseded and retired are separate filters: asking for one does not
+    // reveal cards excluded by the other.
+    expect(repository.list({ includeSuperseded: true }).map((card: CloneCard) => card.id)).toEqual([
+      active.id,
+    ]);
+  });
+
+  it("keeps the first retirement timestamp and clears it on reactivation", () => {
+    const created = repository.create(input());
+
+    const retired = repository.update(created.id, { retired: true });
+    const retiredAgain = repository.update(created.id, { retired: true });
+    const reactivated = repository.update(created.id, { retired: false });
+
+    expect(retiredAgain.retiredAt).toBe(retired.retiredAt);
+    expect(reactivated.retiredAt).toBeNull();
+  });
+
+  it("rejects a retiredAt value that is not a usable timestamp", () => {
+    const created = repository.create(input());
+
+    expect(() => repository.save({ ...created, retiredAt: 0 })).toThrowError(
+      /retiredAt must be a positive epoch-millisecond integer/,
+    );
+    expect(() => repository.save({ ...created, retiredAt: 1.5 })).toThrowError(
+      /retiredAt must be a positive epoch-millisecond integer/,
+    );
+  });
+
   it("rejects self-supersede and invalid card text", () => {
     const created = repository.create(input());
     expect(() => repository.update(created.id, { supersededBy: created.id })).toThrowError(

@@ -1,5 +1,6 @@
 import type { GeniusDatabase } from "../db/database.js";
 import { cardEmbeddingText, type CloneCard, type CreateCardInput, type DistilledCard } from "../domain/card.js";
+import { activeCardClause } from "../cards/active-card-sql.js";
 import { CLONE_CARD_COLUMNS, mapCloneCardRow, type CloneCardRow } from "../cards/card-row.js";
 import type { DistillationCardGateway } from "../distill/distillation-service.js";
 import type { EmbeddingClient } from "../embedding/types.js";
@@ -46,7 +47,7 @@ export class SqliteDistillationCardGateway implements DistillationCardGateway {
            JOIN clone_cards AS cards ON cards.id = vec.card_id
           WHERE cards.domain = ?
             AND cards.visibility = ?
-            AND cards.superseded_by IS NULL
+            AND ${activeCardClause("cards")}
             AND vec_distance_cosine(vec.embedding, ?) < ?
           ORDER BY distance ASC
           LIMIT 1`,

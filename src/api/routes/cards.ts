@@ -23,6 +23,18 @@ const listQuerySchema = z
     q: z.string().trim().min(1).optional(),
     limit: z.coerce.number().int().min(1).max(500).default(50),
     offset: z.coerce.number().int().min(0).default(0),
+    // Explicit "true"/"false" rather than a coerced boolean: z.coerce.boolean()
+    // would read the string "false" as true.
+    includeSuperseded: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    includeRetired: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    sort: z.enum(["createdAt", "confidence"]).default("createdAt"),
+    order: z.enum(["asc", "desc"]).default("desc"),
   })
   .strict();
 
@@ -42,6 +54,12 @@ const patchSchema = z
     tags: cardTagsSchema.optional(),
     confidence: z.number().min(0).max(1).optional(),
     supersededBy: z.string().trim().min(1).nullable().optional(),
+    // Retirement is expressed as intent (`true` = retire, `false` = reactivate)
+    // rather than as a `retiredAt` timestamp: the caller states what should
+    // happen and the server stamps the clock, so no client can backdate a
+    // retirement or invent an inconsistent state. The stored timestamp is
+    // returned on every card DTO as `retiredAt`.
+    retired: z.boolean().optional(),
     // Caller identity for the revision trail; not a card field.
     changedBy: cardChangeOriginSchema.default("api"),
   })
@@ -65,6 +83,12 @@ export function registerCardRoutes(
   app.get("/api/clone/cards/:id", async (c) => {
     const card = await cards.get(c.req.param("id"));
     return card ? c.json(card) : c.json({ error: "Card not found" }, 404);
+  });
+
+  // Retirement history for the UI detail view (spec/feature/operations.md §5).
+  app.get("/api/clone/cards/:id/supersede-chain", async (c) => {
+    const chain = await cards.supersedeChain(c.req.param("id"));
+    return chain ? c.json(chain) : c.json({ error: "Card not found" }, 404);
   });
 
   app.post("/api/clone/cards", async (c) => {

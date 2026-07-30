@@ -37,6 +37,9 @@ export const scoredCardSchema = z
     sourceTier: z.union([z.literal(1), z.literal(2)]),
     confidence: z.number().min(0).max(1),
     supersededBy: z.string().nullable(),
+    // Always null in query results (retired cards are not searchable), but the
+    // DTO carries the column, and this schema is strict.
+    retiredAt: z.number().int().positive().nullable(),
     createdAt: z.number().int().nonnegative(),
     updatedAt: z.number().int().nonnegative(),
     score: z.number(),

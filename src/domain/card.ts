@@ -34,6 +34,12 @@ export interface CloneCard extends DistilledCard {
   sourceRef: string;
   sourceTier: 1 | 2;
   supersededBy: string | null;
+  /**
+   * Retirement timestamp (epoch ms) for a card deactivated without a
+   * replacement; `null` = not retired. Independent of `supersededBy` — either
+   * one takes the card out of the active set.
+   */
+  retiredAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -62,6 +68,13 @@ export interface CardPatch {
   tags?: string[];
   confidence?: number;
   supersededBy?: string | null;
+  /**
+   * Retire (`true`) or reactivate (`false`) the card. The intent is what a
+   * caller can state; the timestamp itself is stamped by the repository clock,
+   * so no caller can backdate a retirement. Reading side is the stored
+   * `retiredAt` value (see CloneCard).
+   */
+  retired?: boolean;
 }
 
 export function cardEmbeddingText(

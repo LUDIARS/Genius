@@ -55,6 +55,7 @@ describe("database migrations", () => {
         "idx_clone_cards_source_ref",
         "idx_clone_cards_superseded_by",
         "idx_clone_cards_category",
+        "idx_clone_cards_retired_at",
         "idx_clone_card_revisions_card_id",
         "idx_embedding_meta_one_active",
       ]),
@@ -64,6 +65,7 @@ describe("database migrations", () => {
       .all()
       .map((column) => column.name);
     expect(cardColumns).toContain("category");
+    expect(cardColumns).toContain("retired_at");
     const cacheColumns = database
       .prepare<[], { name: string }>("PRAGMA table_info('embedding_cache')")
       .all()
@@ -115,6 +117,30 @@ describe("database migrations", () => {
         .prepare("UPDATE clone_cards SET category = ? WHERE id = ?")
         .run("still-not-a-category", "01CARD2"),
     ).toThrow(/category must exist in card_categories/);
+  });
+
+  it("adds retired_at as a partial-indexed nullable column that leaves rows active", () => {
+    const database = migratedMemoryDatabase();
+    database
+      .prepare(
+        `INSERT INTO clone_cards(
+           id, domain, visibility, category, situation, judgment, rationale, tags,
+           source_ref, source_tier, confidence, superseded_by, created_at, updated_at
+         ) VALUES (?, 'work', 'public', NULL, 's', 'j', 'r', '[]', ?, 1, 0.5, NULL, 1, 1)`,
+      )
+      .run("01RETIRE1", "fixture:retire");
+
+    // A row written without the column is active: NULL, not 0.
+    expect(
+      database
+        .prepare<[], { retired_at: number | null }>("SELECT retired_at FROM clone_cards")
+        .all(),
+    ).toEqual([{ retired_at: null }]);
+    const retiredIndex = database
+      .prepare<[], { name: string; partial: 0 | 1 }>("PRAGMA index_list('clone_cards')")
+      .all()
+      .find((index) => index.name === "idx_clone_cards_retired_at");
+    expect(retiredIndex?.partial).toBe(1);
   });
 
   it("uses WAL for a file-backed database", () => {
