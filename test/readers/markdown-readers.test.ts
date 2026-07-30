@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ChannelArchiveReader } from "../../src/readers/channel-archive-reader.js";
+import { parseFrontmatter } from "../../src/readers/markdown.js";
 import { MemoryReader } from "../../src/readers/memory-reader.js";
 import { SessionLogReader } from "../../src/readers/session-log-reader.js";
 import { SourceReaderError } from "../../src/readers/reader-error.js";
@@ -37,6 +38,33 @@ describe("Tier 1 Markdown readers", () => {
 
     const unchanged = await reader.listDocuments(batch.nextCursor);
     expect(unchanged.documents).toEqual([]);
+  });
+
+  it("parses one-level nested frontmatter objects (memory's metadata.type block)", async () => {
+    const directory = await makeTemporaryDirectory();
+    await writeFile(
+      join(directory, "nested.md"),
+      "---\nname: prefer-explicit-failure\ndescription: fail fast on missing sources\nmetadata:\n  type: feedback\n---\n# Prefer explicit failure\n\nBody text.\n",
+      "utf8",
+    );
+    const reader = new MemoryReader(directory);
+    const batch = await reader.listDocuments(null);
+    const document = await reader.readDocument(requiredDescriptor(batch.documents[0]));
+    const frontmatter = document.metadata.frontmatter as Record<string, unknown>;
+
+    expect(frontmatter.name).toBe("prefer-explicit-failure");
+    expect(frontmatter.metadata).toEqual({ type: "feedback" });
+  });
+
+  it("rejects nested frontmatter it cannot represent instead of flattening it", () => {
+    expect(() => parseFrontmatter("---\nmetadata:\n  a: 1\n    c: 2\n---\nbody\n"))
+      .toThrow("nests deeper than one level");
+    expect(() => parseFrontmatter("---\nmetadata:\n  b:\n    c: 2\n---\nbody\n"))
+      .toThrow("no scalar value");
+    expect(() => parseFrontmatter("---\nmetadata:\n  a: 1\n  a: 2\n---\nbody\n"))
+      .toThrow("nested key is duplicated");
+    expect(() => parseFrontmatter("---\n__proto__: polluted\n---\nbody\n"))
+      .toThrow("reserved key");
   });
 
   it("parses session-log headings without treating fenced Markdown as sections", async () => {

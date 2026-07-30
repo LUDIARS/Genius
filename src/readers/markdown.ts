@@ -79,14 +79,19 @@ export function firstMarkdownHeading(markdown: string): string | null {
   return parseMarkdownSections(markdown).find((section) => section.heading !== null)?.heading ?? null;
 }
 
+const NESTED_KEY_VALUE = /^\s+([A-Za-z0-9_.-]+):(?:\s*(.*))?$/;
+const LIST_ITEM = /^\s+-\s+/;
+
 function parseSimpleYamlObject(header: string): Readonly<Record<string, unknown>> {
   const result: Record<string, unknown> = {};
   const lines = header.split("\n");
   let activeArrayKey: string | null = null;
+  let index = 0;
 
-  for (let index = 0; index < lines.length; index += 1) {
+  while (index < lines.length) {
     const line = lines[index] ?? "";
     if (line.trim().length === 0 || line.trimStart().startsWith("#")) {
+      index += 1;
       continue;
     }
 
@@ -97,6 +102,7 @@ function parseSimpleYamlObject(header: string): Readonly<Record<string, unknown>
         throw new Error(`frontmatter line ${index + 1} has an invalid list`);
       }
       existing.push(parseYamlScalar(arrayItem[1] ?? ""));
+      index += 1;
       continue;
     }
 
@@ -106,18 +112,90 @@ function parseSimpleYamlObject(header: string): Readonly<Record<string, unknown>
     }
     const key = keyValue[1] ?? "";
     const rawValue = keyValue[2] ?? "";
+    assertAssignableKey(key, index);
     if (Object.hasOwn(result, key)) {
       throw new Error(`frontmatter key is duplicated: ${key}`);
     }
-    if (rawValue.length === 0) {
-      result[key] = [];
-      activeArrayKey = key;
+    activeArrayKey = null;
+    if (rawValue.length > 0) {
+      result[key] = parseYamlScalar(rawValue);
+      index += 1;
       continue;
     }
-    result[key] = parseYamlScalar(rawValue);
-    activeArrayKey = null;
+
+    // Empty value: either a YAML list (`- item` lines) or a one-level nested
+    // object (`  key: value` lines, e.g. memory frontmatter's `metadata:`
+    // block). Peek at the next line to tell them apart.
+    const nextLine = lines[index + 1] ?? "";
+    if (NESTED_KEY_VALUE.test(nextLine) && !LIST_ITEM.test(nextLine)) {
+      const consumed = parseNestedObject(lines, index + 1);
+      result[key] = consumed.object;
+      index = consumed.nextIndex;
+      continue;
+    }
+    result[key] = [];
+    activeArrayKey = key;
+    index += 1;
   }
   return result;
+}
+
+/**
+ * Parses a one-level-deep nested object (flat `key: value` lines indented
+ * under a parent key). Stops at the first line whose indentation is less
+ * than the first nested line's indentation. Nested values must be scalars;
+ * arrays/further nesting inside a nested object are rejected explicitly
+ * rather than silently flattened or coerced to an empty scalar.
+ */
+function parseNestedObject(
+  lines: readonly string[],
+  startIndex: number,
+): { object: Record<string, unknown>; nextIndex: number } {
+  const object: Record<string, unknown> = {};
+  const baseIndent = lines[startIndex]?.match(/^\s*/)?.[0]?.length ?? 0;
+  let index = startIndex;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+    if (line.trim().length === 0) {
+      index += 1;
+      continue;
+    }
+    const indent = line.match(/^\s*/)?.[0]?.length ?? 0;
+    if (indent < baseIndent) {
+      break;
+    }
+    if (indent > baseIndent) {
+      throw new Error(`frontmatter line ${index + 1} nests deeper than one level`);
+    }
+    const match = NESTED_KEY_VALUE.exec(line);
+    if (match === null) {
+      throw new Error(`frontmatter line ${index + 1} is not a supported nested key/value`);
+    }
+    const key = match[1] ?? "";
+    const rawValue = match[2] ?? "";
+    if (rawValue.trim().length === 0) {
+      throw new Error(`frontmatter nested key has no scalar value: ${key}`);
+    }
+    assertAssignableKey(key, index);
+    if (Object.hasOwn(object, key)) {
+      throw new Error(`frontmatter nested key is duplicated: ${key}`);
+    }
+    object[key] = parseYamlScalar(rawValue);
+    index += 1;
+  }
+  return { object, nextIndex: index };
+}
+
+/**
+ * `__proto__` assigned through a computed property mutates the target's
+ * prototype instead of adding an own key, so `Object.hasOwn` would never see
+ * it. Reject it instead of letting a source file reshape a parsed object.
+ */
+function assertAssignableKey(key: string, index: number): void {
+  if (key === "__proto__") {
+    throw new Error(`frontmatter line ${index + 1} uses a reserved key: ${key}`);
+  }
 }
 
 function parseYamlScalar(rawValue: string): unknown {
