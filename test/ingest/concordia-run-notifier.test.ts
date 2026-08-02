@@ -112,6 +112,46 @@ describe("ConcordiaRunNotifier", () => {
     expect(runLevel).toContain("--sources memory");
     expect(runLevel).not.toContain("--retry-failed");
 
+    // ソース単位の失敗 (listDocuments) は ingest_failures に記録されないので
+    // --retry-failed では拾えない。通常の再実行を案内する。
+    const sourceLevel = formatNotificationText(notification({
+      sources: ["memory", "review"],
+      failures: [
+        {
+          source: "review",
+          locator: "<listDocuments>",
+          errorKind: "source-read-failed",
+          errorMessage: "[review] cannot read latest.json",
+          scope: "source",
+        },
+      ],
+    }));
+    expect(sourceLevel).toContain("--sources review");
+    expect(sourceLevel).not.toContain("--retry-failed");
+
+    // 文書単位とソース単位が混在する run は両方の再処理を案内する。
+    const mixed = formatNotificationText(notification({
+      sources: ["memory", "review"],
+      failures: [
+        {
+          source: "memory",
+          locator: "notes/decision.md",
+          errorKind: "processing-failed",
+          errorMessage: "Error",
+          scope: "document",
+        },
+        {
+          source: "review",
+          locator: "<listDocuments>",
+          errorKind: "source-read-failed",
+          errorMessage: "[review] cannot read latest.json",
+          scope: "source",
+        },
+      ],
+    }));
+    expect(mixed).toContain("--sources memory --retry-failed");
+    expect(mixed).toContain("--sources review\n");
+
     // run 単位の Tier 2 失敗でも budget は付けない。未指定 = 上限なしなので、
     // ここで上限を足すと再処理が黙って途中までで終わる
     // (spec/feature/operations.md §6)。

@@ -253,21 +253,34 @@ describe("ingest failure isolation (spec/feature/operations.md section 4)", () =
     expect(notifier.notifications).toHaveLength(0);
   });
 
-  it("notifies Concordia when the whole run fails", async () => {
+  it("isolates a listDocuments failure to its source and finishes completed-with-errors", async () => {
+    // Memoria #696: review の列挙失敗が run 全体を fail させ、他ソースまで
+    // 巻き込んでいた。ソース単位で隔離し、run は completed-with-errors で終わる。
     const reader = new TwoDocumentReader();
     reader.listDocuments = async () => {
-      throw new SourceReaderError("memory", "cannot list source");
+      throw new SourceReaderError("memory", "cannot list source", {
+        locator: "project/latest.json",
+      });
     };
     const service = createService(reader, false);
     const run = service.start({ sources: ["memory"] });
     const finished = await service.wait(run.id);
 
-    expect(finished.status).toBe("failed");
+    expect(finished).toMatchObject({ status: "completed-with-errors", error: null });
+    // 文書 locator を復元できないため ingest_failures には記録しない。
+    expect(failures.countUnresolved(["memory"])).toBe(0);
+    expect(logger.entries).toContainEqual(expect.objectContaining({
+      event: "source-failed",
+      source: "memory",
+    }));
     expect(notifier.notifications).toHaveLength(1);
-    expect(notifier.notifications[0]).toMatchObject({
-      status: "failed",
-      error: "Ingest failed: source-read-failed; source=memory",
-    });
+    expect(notifier.notifications[0]?.failures).toEqual([
+      expect.objectContaining({
+        source: "memory",
+        locator: "project/latest.json",
+        errorKind: "source-read-failed",
+      }),
+    ]);
   });
 
   it("surfaces a notification failure without overturning the ingest result", async () => {

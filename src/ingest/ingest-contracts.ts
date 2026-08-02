@@ -97,6 +97,12 @@ export interface IngestRunNotificationFailure {
   locator: string;
   errorKind: IngestErrorKind;
   errorMessage: string;
+  /**
+   * "source" = listDocuments などソース単位の失敗。ingest_failures に記録
+   * されないため `--retry-failed` では拾えず、再処理は通常の run になる。
+   * 省略時は文書単位 ("document") — ingest_failures に記録済み。
+   */
+  scope?: "source" | "document";
 }
 
 /**
@@ -145,6 +151,7 @@ export interface IngestLogEntry extends IngestTotals {
     | "source-started"
     | "document-started"
     | "source-skipped"
+    | "source-failed"
     | "document-completed"
     | "document-skipped"
     | "document-failed"

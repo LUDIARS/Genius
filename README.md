@@ -183,6 +183,16 @@ node dist/cli.js ingest --sources <failed-source> --retry-failed
 
 Tier 2 ソースの retry には `--tier2` も必要です (`--budget-files` は併用不可)。
 
+### ソース単位の失敗 (`source-failed`)
+
+`listDocuments` の失敗のように文書を特定できない失敗も run 全体を止めません。
+該当ソースだけを `logs/ingest.jsonl` の `source-failed` と通知へ出し、残りの
+ソースを処理して `completed-with-errors` で終わります。文書 locator が無く
+`--retry-failed` が descriptor を復元できないため `ingest_failures` には
+記録しません。したがって再処理は **通常の run** です
+(`node dist/cli.js ingest --sources <failed-source>`)。通知の retry 行も
+ソース単位の失敗には `--retry-failed` を付けません。
+
 ### LLM 向け判断指針 (通知を受けたときのフォールバック)
 
 自動リトライは実装していません。判断は通知を受けたセッションの LLM、実行は

@@ -37,24 +37,61 @@ describe("ReviewReader", () => {
     expect(document.content).not.toContain("historical report");
   });
 
-  it("fails when latest.json is malformed or its selected directory has no Markdown", async () => {
+  it("fails when latest.json is malformed", async () => {
     const malformedRoot = await makeTemporaryDirectory();
     await mkdir(join(malformedRoot, "project"), { recursive: true });
     await writeFile(join(malformedRoot, "project", "latest.json"), "not-json", "utf8");
     await expect(new ReviewReader(malformedRoot).listDocuments(null)).rejects.toBeInstanceOf(
       SourceReaderError,
     );
+  });
 
-    const emptyRoot = await makeTemporaryDirectory();
-    await mkdir(join(emptyRoot, "project", "2026-07-01"), { recursive: true });
+  it("skips projects whose latest directory has no Markdown (daily format_version 2 output)", async () => {
+    // 日次差分レビューは review.json だけを書く。throw すると review ソースが
+    // 毎 run 失敗する (Memoria #696)。
+    const root = await makeTemporaryDirectory();
+    await mkdir(join(root, "daily-only", "2026-08-01"), { recursive: true });
     await writeFile(
-      join(emptyRoot, "project", "latest.json"),
+      join(root, "daily-only", "latest.json"),
+      JSON.stringify({ date: "2026-08-01" }),
+      "utf8",
+    );
+    await writeFile(join(root, "daily-only", "2026-08-01", "review.json"), "{}", "utf8");
+    await mkdir(join(root, "full", "2026-07-01"), { recursive: true });
+    await writeFile(
+      join(root, "full", "latest.json"),
+      JSON.stringify({ date: "2026-07-01", repo: "LUDIARS/full" }),
+      "utf8",
+    );
+    await writeFile(join(root, "full", "2026-07-01", "REVIEW.md"), "# Full review", "utf8");
+
+    const batch = await new ReviewReader(root).listDocuments(null);
+    expect(batch.documents.map((item) => item.locator)).toEqual([
+      "full/2026-07-01/REVIEW.md",
+    ]);
+  });
+  it("skips a project whose latest.json points at a pruned date directory", async () => {
+    // 日付ディレクトリが整理済みなのは「読むものが無い」であってエラーではない。
+    // throw すると 1 プロジェクトの状態で review ソース全体が毎 run 失敗する。
+    const root = await makeTemporaryDirectory();
+    await mkdir(join(root, "pruned"), { recursive: true });
+    await writeFile(
+      join(root, "pruned", "latest.json"),
+      JSON.stringify({ date: "2026-01-01" }),
+      "utf8",
+    );
+    await mkdir(join(root, "full", "2026-07-01"), { recursive: true });
+    await writeFile(
+      join(root, "full", "latest.json"),
       JSON.stringify({ date: "2026-07-01" }),
       "utf8",
     );
-    await expect(new ReviewReader(emptyRoot).listDocuments(null)).rejects.toThrow(
-      "no Markdown documents",
-    );
+    await writeFile(join(root, "full", "2026-07-01", "REVIEW.md"), "# Full review", "utf8");
+
+    const batch = await new ReviewReader(root).listDocuments(null);
+    expect(batch.documents.map((item) => item.locator)).toEqual([
+      "full/2026-07-01/REVIEW.md",
+    ]);
   });
 });
 

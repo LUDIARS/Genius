@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import { z } from "zod";
 import { normalizeLoopbackHttpUrl } from "../config/loopback-url.js";
 import type { DistillCompletionRequest, DistillLlm, PromptContent } from "./distill-llm.js";
+import { DistillationBackendError } from "./distill-errors.js";
 
 const DEFAULT_COMPLETION_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_READINESS_TIMEOUT_MS = 2 * 60 * 1000;
@@ -104,7 +105,7 @@ export class OllamaDistillLlm implements DistillLlm {
       "completion",
     );
     const parsed = ollamaChatResponseSchema.safeParse(payload);
-    if (!parsed.success) throw new Error("Ollama completion response is malformed");
+    if (!parsed.success) throw new DistillationBackendError("Ollama completion response is malformed");
     return parsed.data.message.content;
   }
 
@@ -123,15 +124,15 @@ export class OllamaDistillLlm implements DistillLlm {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
-      throw new Error(`Ollama ${operation} request failed`, { cause: error });
+      throw new DistillationBackendError(`Ollama ${operation} request failed`, { cause: error });
     }
     if (!response.ok) {
-      throw new Error(`Ollama ${operation} request failed with HTTP ${response.status}`);
+      throw new DistillationBackendError(`Ollama ${operation} request failed with HTTP ${response.status}`);
     }
     try {
       return await response.json();
     } catch (error) {
-      throw new Error(`Ollama ${operation} response is not valid JSON`, { cause: error });
+      throw new DistillationBackendError(`Ollama ${operation} response is not valid JSON`, { cause: error });
     }
   }
 }

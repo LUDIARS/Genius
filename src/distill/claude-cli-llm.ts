@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { DistillationBackendError } from "./distill-errors.js";
 import type {
   DistillCompletionRequest,
   DistillLlm,
@@ -199,17 +200,17 @@ function runClaude(
 
     const timeout = setTimeout(() => {
       child.kill();
-      finish(new Error(`Claude CLI completion timed out after ${timeoutMs}ms`));
+      finish(new DistillationBackendError(`Claude CLI completion timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     child.once("error", (error) => {
-      finish(new Error(`Failed to start Claude CLI: ${error.message}`));
+      finish(new DistillationBackendError(`Failed to start Claude CLI: ${error.message}`));
     });
     child.stdout.on("data", (chunk: Buffer) => {
       outputBytes += chunk.byteLength;
       if (outputBytes > MAX_OUTPUT_BYTES) {
         child.kill();
-        finish(new Error(`Claude CLI output exceeded ${MAX_OUTPUT_BYTES} bytes`));
+        finish(new DistillationBackendError(`Claude CLI output exceeded ${MAX_OUTPUT_BYTES} bytes`));
         return;
       }
       stdout.push(chunk);
@@ -223,7 +224,7 @@ function runClaude(
     child.once("close", (code, signal) => {
       if (code !== 0) {
         finish(
-          new Error(
+          new DistillationBackendError(
             `Claude CLI failed (code=${String(code)}, signal=${String(signal)}); stderr withheld`,
           ),
         );
@@ -234,7 +235,7 @@ function runClaude(
 
     pipeline(Readable.from(promptChunks(prompt)), child.stdin).catch((error: unknown) => {
       child.kill();
-      finish(new Error("Failed to stream Claude CLI prompt", { cause: error }));
+      finish(new DistillationBackendError("Failed to stream Claude CLI prompt", { cause: error }));
     });
   });
 }

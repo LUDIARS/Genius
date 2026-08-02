@@ -1,0 +1,65 @@
+{
+  "name": "configuration",
+  "description": "genius.config.json loader, relative-path resolution, env-var overrides (GENIUS_*), Excubitor-catalog port resolution, source declarations, and fail-fast on invalid/missing config.",
+  "presetRules": [
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "/src/config/",
+        "by": "path",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "[Cc]onfig",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "loadConfig",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "resolvePort",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "env",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "GENIUS_",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    }
+  ],
+  "templateRules": [],
+  "cardTemplate": "Summarise the \"configuration\" domain: genius.config.json loader, relative-path resolution, env-var overrides (GENIUS_*), Excubitor-catalog port resolution, source declarations, and fail-fast on invalid/missing config.",
+  "source": "spec-draft",
+  "mechanics": [],
+  "specRefs": [
+    "Genius — プロジェクトルール",
+    "Genius DB スキーマ / 設定",
+    "Genius — 自分クローン判断カード DB / Excubitor catalog"
+  ],
+  "rationale": "6-file config directory centralizes the fail-fast configuration contract that every other domain depends on for paths, ports, and backends.",
+  "updatedAt": "2026-08-02T08:02:27.660Z"
+}

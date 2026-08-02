@@ -283,7 +283,10 @@ describe("IngestService operational behavior", () => {
     await expect(service.wait(first.id)).resolves.toMatchObject({ status: "completed" });
   });
 
-  it("does not persist source locators from failures", async () => {
+  it("does not write source locators from failures into the log or stderr", async () => {
+    // ソースレベル失敗は run を fail させずソース単位で隔離する (Memoria #696)。
+    // 変わらない不変条件: ログと warning に locator (絶対パスになり得る) を
+    // 転記しない。
     const privateLocator = "C:/private/source.md";
     const logger = new MemoryLogger();
     const warnings: string[] = [];
@@ -295,11 +298,14 @@ describe("IngestService operational behavior", () => {
 
     const finished = await service.wait(run.id);
 
-    expect(finished.status).toBe("failed");
-    expect(finished.error).toBe("Ingest failed: source-read-failed; source=memory");
+    expect(finished.status).toBe("completed-with-errors");
+    expect(finished.error).toBeNull();
+    expect(logger.entries).toContainEqual(
+      expect.objectContaining({ event: "source-failed", source: "memory" }),
+    );
     expect(JSON.stringify(logger.entries)).not.toContain(privateLocator);
     expect(warnings).toEqual([
-      `Ingest run ${run.id} failed: Ingest failed: source-read-failed; source=memory`,
+      `Ingest source failed (run ${run.id}): memory — source-read-failed: [memory] cannot read source`,
     ]);
     expect(warnings.join(" ")).not.toContain(privateLocator);
   });

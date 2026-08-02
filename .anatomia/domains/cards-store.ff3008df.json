@@ -1,0 +1,89 @@
+{
+  "name": "cards-store",
+  "description": "Card model, CardRepository, active-card SQL definition (superseded_by/retired_at), patch/supersede/retire logic, and revision auditing (clone_card_revisions).",
+  "presetRules": [
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "/src/cards/",
+        "by": "path",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "/src/categories/",
+        "by": "path",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "Card",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "CardRepository",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "activeCard",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "supersede",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "retire",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "preparePatch",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "categor",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    }
+  ],
+  "templateRules": [],
+  "cardTemplate": "Summarise the \"cards-store\" domain: Card model, CardRepository, active-card SQL definition (superseded_by/retired_at), patch/supersede/retire logic, and revision auditing (clone_card_revisions).",
+  "source": "spec-draft",
+  "mechanics": [],
+  "specRefs": [
+    "Genius DB スキーマ / clone_cards — 判断カード (正)",
+    "Genius DB スキーマ / 「活性カード」の定義 (正)",
+    "Genius 運用化設計 / 1. カテゴリーベースのカード (#3, #6)"
+  ],
+  "rationale": "The canonical card data + its controlled-vocabulary categories form one storage domain; active-card SQL is centralized here and referenced everywhere.",
+  "updatedAt": "2026-08-02T08:02:27.657Z"
+}

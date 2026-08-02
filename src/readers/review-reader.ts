@@ -6,6 +6,7 @@ import {
   listFilesRecursively,
   normalizeLocator,
   resolveSourceFile,
+  type FileEntry,
 } from "./file-tree.js";
 import { firstMarkdownHeading } from "./markdown.js";
 import { SourceReaderError } from "./reader-error.js";
@@ -46,17 +47,13 @@ export class ReviewReader implements SourceReader {
       const manifestValue = await this.readManifest(manifest.locator);
       const projectDirectory = dirname(manifest.absolutePath);
       const latestDirectory = resolve(projectDirectory, manifestValue.date);
-      const markdownFiles = await listFilesRecursively(
-        this.source,
-        latestDirectory,
-        (locator) => locator.toLowerCase().endsWith(".md"),
-      );
+      const markdownFiles = await this.listLatestMarkdown(latestDirectory);
       if (markdownFiles.length === 0) {
-        throw new SourceReaderError(
-          this.source,
-          `latest review has no Markdown documents: ${manifestValue.date}`,
-          { locator: manifest.locator },
-        );
+        // 日次差分レビュー (format_version 2) は review.json だけを書き、
+        // Markdown ドキュメントを残さない。これはエラーではなく「新しい
+        // フル形式レビューが無い」状態なので、このプロジェクトを読み飛ばす
+        // (throw すると review ソース全体が毎 run 失敗する — Memoria #696)。
+        continue;
       }
       for (const markdownFile of markdownFiles) {
         descriptors.push({
@@ -116,6 +113,25 @@ export class ReviewReader implements SourceReader {
     };
   }
 
+  /**
+   * latest.json が指す日付ディレクトリの Markdown を列挙する。ディレクトリ自体が
+   * 無い (古いレビューが整理された / まだ書き出されていない) のは「読むものが
+   * 無い」であってエラーではないので空として扱う — throw すると 1 プロジェクトの
+   * 状態で review ソース全体が毎 run 失敗する (Memoria #696 と同じ失敗形)。
+   */
+  private async listLatestMarkdown(directory: string): Promise<readonly FileEntry[]> {
+    try {
+      return await listFilesRecursively(
+        this.source,
+        directory,
+        (locator) => locator.toLowerCase().endsWith(".md"),
+      );
+    } catch (error) {
+      if (error instanceof SourceReaderError && isMissingEntry(error.cause)) return [];
+      throw error;
+    }
+  }
+
   private async readManifest(locator: string): Promise<ReviewManifest> {
     const manifestPath = resolveSourceFile(this.source, this.rootDirectory, locator);
     let text: string;
@@ -164,6 +180,12 @@ interface ReviewManifest {
 function isProjectLatestManifest(locator: string): boolean {
   const parts = locator.split("/");
   return parts.at(-1)?.toLowerCase() === "latest.json" && parts.length <= 2;
+}
+
+/** 「そこに無い」だけの失敗か (壊れた設定や権限エラーとは区別する)。 */
+function isMissingEntry(cause: unknown): boolean {
+  const code = (cause as NodeJS.ErrnoException | null | undefined)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

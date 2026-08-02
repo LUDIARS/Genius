@@ -155,6 +155,34 @@ status: draft (2026-07-30 neco 方針決定の反映)
   再実行手順 (`ingest --sources <failed> --retry-failed`) と判断指針
   (リトライ / 該当文書 skip / 人間へエスカレーション) を README に明記する。
   自動リトライは実装しない (判断は LLM、実行はコマンド)。
+- **診断可能なエラー記録 (2026-08-02, Memoria #694)**: 非転記ルールは
+  「未知例外のメッセージを転記しない」であって「情報を捨てる」ではない。
+  - 自前コードが組み立てる管理されたメッセージ (`SourceReaderError` /
+    `EmbeddingError` / `DistillationBackendError` / `DistillationOutputError`)
+    はそのまま (300 文字で切り詰めて) 記録してよい。ただし管理されたメッセージも
+    設定由来の絶対パスを含み得る (`cannot open source directory: <root>`) ので、
+    記録前に絶対パスは basename (`…/<name>`) へ落とす。
+  - 未知例外は「クラス名 + `code` + cause 連鎖のクラス名 + スタック先頭
+    フレーム (basename:行:列 のみ、絶対パス禁止)」に落とす。
+    `error_message` が "Error" だけになる記録は禁止 (2026-07-31 に 484 件が
+    診断不能になった実障害)。
+  - LLM 出力の JSON 抽出はフェンス前後の解説文を許容する
+    (`src/distill/json-completion.ts`)。抽出失敗の要約は SyntaxError の
+    position と Zod issue の code/path のみで、出力断片は含まない。
+- **ソース単位の隔離 (2026-08-02, Memoria #696)**: `listDocuments` など
+  ソースレベルの失敗は当該ソースだけを `source-failed` として通知・ログし、
+  残りのソースを続行して run を `completed-with-errors` で終える。
+  `ingest_failures` には記録しない (文書 locator が無く `--retry-failed` が
+  descriptor を復元できないため)。review ソースは日次差分レビュー
+  (format_version 2, review.json のみ) の日付ディレクトリを「新しいフル形式
+  レビュー無し」として読み飛ばす。`latest.json` が指す日付ディレクトリが
+  存在しない (整理済み) 場合も同じく読み飛ばす — 1 プロジェクトの状態で
+  review ソース全体を毎 run 落とさない。
+  - 通知の再処理案内は失敗の scope で分ける。`--retry-failed` は
+    `ingest_failures` を入力にするので文書単位の失敗にだけ付け、ソース単位の
+    失敗には通常の再実行 (`ingest --sources <failed>`) を案内する。
+    ソース単位の失敗に `--retry-failed` を付けると空振りするコマンドを
+    LLM へ渡すことになる。
 
 ## 5. カード棚卸し WebUI (#7)
 

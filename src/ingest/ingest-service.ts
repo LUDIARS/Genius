@@ -1,6 +1,7 @@
 import type { SourceDocumentDescriptor, SourceName } from "../readers/source-reader.js";
 import type { SourceReader } from "../readers/source-reader.js";
-import { classifyIngestError } from "./failure-classification.js";
+import { classifyIngestError, redactPaths } from "./failure-classification.js";
+import { SourceReaderError } from "../readers/reader-error.js";
 import type {
   DocumentDistiller,
   IngestFailureStore,
@@ -147,10 +148,41 @@ export class IngestService {
           logEntry(this.#clock, run.id, source, emptyTotals(), "source-started"),
         );
 
-        if (options.retryFailed) {
-          await this.#retrySource(run.id, source, reader, totals, failures);
-        } else {
-          await this.#ingestSource(run.id, source, reader, options, totals, failures);
+        try {
+          if (options.retryFailed) {
+            await this.#retrySource(run.id, source, reader, totals, failures);
+          } else {
+            await this.#ingestSource(run.id, source, reader, options, totals, failures);
+          }
+        } catch (error) {
+          // listDocuments などソースレベルの失敗で run 全体を落とさない
+          // (Memoria #696 — review の列挙失敗が他ソースまで巻き込んでいた)。
+          // ingest_failures には記録しない: 文書 locator が無く、--retry-failed
+          // が readDocument へ渡せる descriptor を復元できないため。通知と
+          // ログで可視化し、次の通常 run が同じソースを再列挙する。
+          const failure = error instanceof Error ? error : new Error(String(error));
+          const classified = classifyIngestError(failure);
+          // locator はソース相対が reader の契約だが、通知は絶対パスを載せない
+          // 契約なので念のため basename へ落とす (spec/feature/operations.md §4)。
+          const locator =
+            failure instanceof SourceReaderError && failure.locator !== null
+              ? redactPaths(failure.locator)
+              : "<listDocuments>";
+          failures.push({
+            source,
+            locator,
+            errorKind: classified.kind,
+            errorMessage: classified.message,
+            // ingest_failures に無いので通知の再処理案内は --retry-failed に
+            // してはいけない (空振りする)。
+            scope: "source",
+          });
+          this.#warningSink(
+            `Ingest source failed (run ${run.id}): ${source} — ${classified.kind}: ${classified.message}`,
+          );
+          await this.#logger.append(
+            logEntry(this.#clock, run.id, source, emptyTotals(), "source-failed", classified.message),
+          );
         }
       }
       const status = failures.length === 0 ? "completed" : "completed-with-errors";
@@ -292,6 +324,7 @@ export class IngestService {
         locator: descriptor.locator,
         errorKind: classified.kind,
         errorMessage: classified.message,
+        scope: "document",
       });
       this.#warningSink(
         `Ingest document failed (run ${runId}): ${source}:${descriptor.locator} — ${classified.kind}`,

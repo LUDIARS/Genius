@@ -1,0 +1,73 @@
+{
+  "name": "persistence-schema",
+  "description": "SQLite (better-sqlite3, WAL) database access, numbered idempotent migrations, sqlite-vec vec0 table, and the schema for cards/vectors/runs/failures/cursors/query_log/questions.",
+  "presetRules": [
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "/src/db/",
+        "by": "path",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "/src/db/migrations/",
+        "by": "path",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "[Mm]igration",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "migrate",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "openDb",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "schema",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "vec0",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    }
+  ],
+  "templateRules": [],
+  "cardTemplate": "Summarise the \"persistence-schema\" domain: SQLite (better-sqlite3, WAL) database access, numbered idempotent migrations, sqlite-vec vec0 table, and the schema for cards/vectors/runs/failures/cursors/query_log/questions.",
+  "source": "spec-draft",
+  "mechanics": [],
+  "specRefs": [
+    "Genius DB スキーマ",
+    "Genius DB スキーマ / distill_runs — 実行記録",
+    "Genius DB スキーマ / clone_vec — ベクトル索引"
+  ],
+  "rationale": "db/ + migrations own the physical schema and migration discipline (no DROP/type-change) — a foundational domain the card/query domains build on.",
+  "updatedAt": "2026-08-02T08:02:27.670Z"
+}

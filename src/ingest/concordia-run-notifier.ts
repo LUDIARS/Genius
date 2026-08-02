@@ -1,5 +1,6 @@
 import { normalizeLoopbackHttpUrl } from "../config/loopback-url.js";
 import { TIER_TWO_SOURCES } from "../config/types.js";
+import type { SourceName } from "../readers/source-reader.js";
 import type { IngestRunNotification, IngestRunNotifier } from "./ingest-contracts.js";
 
 /** Concordia /v1/chat の text 上限 (PostSchema.text max 2000)。 */
@@ -78,7 +79,7 @@ export function formatNotificationText(notification: IngestRunNotification): str
   }
   // 再処理コマンドは通知の実用部分なので、明細行より前に置いて
   // MAX_TEXT_LENGTH の切り詰めで落ちないようにする。
-  lines.push(retryHint(notification));
+  lines.push(...retryHints(notification));
   for (const failure of notification.failures.slice(0, MAX_FAILURE_LINES)) {
     lines.push(
       `- ${failure.source}:${failure.locator} — ${failure.errorKind}: ${truncate(failure.errorMessage)}`,
@@ -94,13 +95,37 @@ export function formatNotificationText(notification: IngestRunNotification): str
 /**
  * 通知を受けた LLM がそのまま実行できる再処理コマンド (spec §4 の LLM
  * フォールバック)。--retry-failed は ingest_failures を入力にするため、
- * 隔離された文書が無い run 単位の失敗では通常の再実行を案内する。
- * Tier 2 ソースが含まれる場合は --tier2 が無いと CLI が検証で落ちる。
+ * そこに記録された文書単位の失敗にだけ付ける。ソース単位の失敗
+ * (listDocuments — spec §4「ソース単位の隔離」) と run 単位の失敗は
+ * ingest_failures に無いので、通常の再実行を案内する (--retry-failed を
+ * 付けると空振りする)。両方あるときは 2 行出す。
  */
-function retryHint(notification: IngestRunNotification): string {
-  const failedSources = [...new Set(notification.failures.map((failure) => failure.source))];
-  const isolated = failedSources.length > 0;
-  const sources = isolated ? failedSources : [...notification.sources];
+function retryHints(notification: IngestRunNotification): string[] {
+  const isolated = failedSources(notification, (scope) => scope !== "source");
+  const sourceLevel = failedSources(notification, (scope) => scope === "source");
+  if (isolated.length === 0 && sourceLevel.length === 0) {
+    return [retryCommand([...notification.sources], false)];
+  }
+  return [
+    ...(isolated.length > 0 ? [retryCommand(isolated, true)] : []),
+    ...(sourceLevel.length > 0 ? [retryCommand(sourceLevel, false)] : []),
+  ];
+}
+
+function failedSources(
+  notification: IngestRunNotification,
+  matches: (scope: "source" | "document") => boolean,
+): SourceName[] {
+  return [
+    ...new Set(
+      notification.failures
+        .filter((failure) => matches(failure.scope ?? "document"))
+        .map((failure) => failure.source),
+    ),
+  ];
+}
+
+function retryCommand(sources: readonly SourceName[], retryFailed: boolean): string {
   const tierTwo = sources.some((source) =>
     TIER_TWO_SOURCES.some((tierTwoSource) => tierTwoSource === source),
   );
@@ -111,7 +136,7 @@ function retryHint(notification: IngestRunNotification): string {
     // 上限なしなので付けない — ここで --budget-files を足すと、再処理のつもりの
     // コマンドが黙って途中までしか読まなくなる (spec/feature/operations.md §6)。
     ...(tierTwo ? ["--tier2"] : []),
-    ...(isolated ? ["--retry-failed"] : []),
+    ...(retryFailed ? ["--retry-failed"] : []),
   ].join(" ");
 }
 

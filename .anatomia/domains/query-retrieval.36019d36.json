@@ -1,0 +1,65 @@
+{
+  "name": "query-retrieval",
+  "description": "Retrieval-conditioned judgment: local embedding of query, sqlite-vec KNN over clone_vec, quadrant/active/category filtering, tier/confidence re-rank, and query_log measurement for retrieval-miss detection.",
+  "presetRules": [
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "/src/query/",
+        "by": "path",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "[Qq]uery",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "search",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "knn",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "rerank",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    },
+    {
+      "preset": "couplingCap",
+      "params": {
+        "targetPattern": "queryLog",
+        "by": "name",
+        "maxFanOut": 9007199254740991
+      }
+    }
+  ],
+  "templateRules": [],
+  "cardTemplate": "Summarise the \"query-retrieval\" domain: Retrieval-conditioned judgment: local embedding of query, sqlite-vec KNN over clone_vec, quadrant/active/category filtering, tier/confidence re-rank, and query_log measurement for retrieval-miss detection.",
+  "source": "spec-draft",
+  "mechanics": [],
+  "specRefs": [
+    "Genius 本体設計 / 6. 検索・提供面",
+    "Genius DB スキーマ / clone_vec — ベクトル索引",
+    "Genius 運用化設計 / 1.3 検索"
+  ],
+  "rationale": "Search/serve path is the product's core (~200ms card supply) and a distinct concern from ingest-side writing.",
+  "updatedAt": "2026-08-02T08:02:27.671Z"
+}
