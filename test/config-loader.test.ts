@@ -130,6 +130,43 @@ describe("loadConfig", () => {
     expect(enabled.notify.concordiaBaseUrl).toBe("http://127.0.0.1:14500");
   });
 
+  it("defaults the questions / contradiction / queryLog sections when absent", () => {
+    const config = loadConfig({
+      configPath: writeConfig(fixtureDirectory()),
+      environment: {},
+    });
+    expect(config.questions).toEqual({
+      enabled: true,
+      maxPerRun: 5,
+      maxOpen: 20,
+      lowConfidenceBelow: 0.5,
+      discordEnabled: true,
+    });
+    expect(config.contradiction).toEqual({
+      situationSimilarityMin: 0.85,
+      judgmentSimilarityMax: 0.5,
+    });
+    expect(config.queryLog).toEqual({ enabled: true, retentionDays: 30 });
+  });
+
+  it("rejects invalid questions / queryLog values instead of falling back", () => {
+    const directory = fixtureDirectory();
+    const config = validConfig();
+    config.questions = { maxPerRun: 0 };
+    expect(() =>
+      loadConfig({ configPath: writeConfig(directory, config), environment: {} }),
+    ).toThrowError(/Invalid config/);
+
+    const other = validConfig();
+    other.queryLog = { retentionDays: -1 };
+    expect(() =>
+      loadConfig({
+        configPath: writeConfig(fixtureDirectory(), other),
+        environment: {},
+      }),
+    ).toThrowError(/Invalid config/);
+  });
+
   it("rejects a non-loopback Concordia notify URL", () => {
     const directory = fixtureDirectory();
     const config = validConfig();

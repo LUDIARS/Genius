@@ -17,6 +17,21 @@
   "notify": {
     "concordiaBaseUrl": null
   },
+  "questions": {
+    "enabled": true,
+    "maxPerRun": 5,
+    "maxOpen": 20,
+    "lowConfidenceBelow": 0.5,
+    "discordEnabled": true
+  },
+  "contradiction": {
+    "situationSimilarityMin": 0.85,
+    "judgmentSimilarityMax": 0.5
+  },
+  "queryLog": {
+    "enabled": true,
+    "retentionDays": 30
+  },
   "sources": {
     "memoryDir": null,
     "sessionLogsDir": null,

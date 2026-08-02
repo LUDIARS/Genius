@@ -58,6 +58,25 @@ export interface NotifyConfig {
   concordiaBaseUrl: string | null;
 }
 
+export interface QuestionsConfig {
+  enabled: boolean;
+  maxPerRun: number;
+  maxOpen: number;
+  lowConfidenceBelow: number;
+  /** notify.concordiaBaseUrl が null なら実質無効 (起動時に 1 行明示する)。 */
+  discordEnabled: boolean;
+}
+
+export interface ContradictionConfig {
+  situationSimilarityMin: number;
+  judgmentSimilarityMax: number;
+}
+
+export interface QueryLogConfig {
+  enabled: boolean;
+  retentionDays: number;
+}
+
 export interface GeniusConfig {
   port: number;
   dataDir: string;
@@ -65,6 +84,9 @@ export interface GeniusConfig {
   distill: DistillConfig;
   sources: SourceConfig;
   notify: NotifyConfig;
+  questions: QuestionsConfig;
+  contradiction: ContradictionConfig;
+  queryLog: QueryLogConfig;
 }
 
 export interface LoadedGeniusConfig extends GeniusConfig {

@@ -41,6 +41,10 @@ describe("database migrations", () => {
         "ingest_state",
         "distill_runs",
         "schema_migrations",
+        "query_log",
+        "questions",
+        "question_targets",
+        "question_answers",
       ]),
     );
     const indexes = database
@@ -57,6 +61,10 @@ describe("database migrations", () => {
         "idx_clone_cards_category",
         "idx_clone_cards_retired_at",
         "idx_clone_card_revisions_card_id",
+        "idx_query_log_created_at",
+        "idx_questions_status",
+        "idx_question_targets_question_id",
+        "idx_question_answers_question_id",
         "idx_embedding_meta_one_active",
       ]),
     );

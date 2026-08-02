@@ -135,6 +135,68 @@ CREATE VIRTUAL TABLE IF NOT EXISTS clone_vec USING vec0(
 PK は `(source, locator)` — 再失敗は同一行を上書きし `resolved_at` を NULL に戻す。
 部分インデックス `idx_ingest_failures_unresolved` (`resolved_at IS NULL`)。
 
+## query_log — 検索ミス計測 (migration 005)
+
+補完質問の retrieval-miss 検出 (spec/feature/active-questioning.md §1.2)。
+**判断ではなく生のクエリ文**なのでカードと扱いを分ける: 公開 export に含めない・
+カード DTO に出さない・WebUI の質問画面でのみ参照する。保持期間
+(`queryLog.retentionDays`, 既定 30 日) をサーバ起動時と ingest 完了後に強制する。
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | TEXT PK | ULID |
+| text | TEXT | 生のクエリ文 |
+| domain | TEXT NULL | クエリの domain フィルタ (`work` / `hobby`) |
+| visibility | TEXT NULL | クエリの visibility フィルタ (`public` / `sensitive`) |
+| categories | TEXT NULL | クエリの categories フィルタ (JSON 配列) |
+| top_similarity | REAL NULL | top1 のセマンティック類似度 (1 / (1 + distance))。0 件なら NULL |
+| result_count | INTEGER | 返した件数 |
+| created_at | INTEGER | epoch ms |
+
+## questions / question_targets / question_answers — 補完質問 (migration 006)
+
+能動学習の質問キュー (spec/feature/active-questioning.md §2.1)。統制語彙
+(gap_kind / status / target_kind / answered_via) は CHECK で fail-fast。
+
+### questions
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | TEXT PK | ULID |
+| question | TEXT | 訊く内容 |
+| context | TEXT | なぜ訊くのかの 1 行 |
+| category | TEXT | `card_categories` 参照 |
+| domain | TEXT | `work` / `hobby` |
+| visibility | TEXT | `public` / `sensitive` (二重チェックゲート通過値。public のみ Discord 可) |
+| gap_kind | TEXT | `low-confidence` / `contradiction` / `category-gap` / `retrieval-miss` / `curation` |
+| status | TEXT | `open` / `answered` / `dismissed` (既定 `open`) |
+| asked_at | INTEGER NULL | Discord へ送った時刻。WebUI のみなら NULL |
+| answered_at | INTEGER NULL | 回答時刻 |
+| discord_message_id | TEXT NULL | Concordia chat の message id |
+| created_at | INTEGER | epoch ms |
+
+### question_targets
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | TEXT PK | ULID |
+| question_id | TEXT | `questions` 参照 |
+| target_kind | TEXT | `card` / `card-pair` / `query_log` |
+| target_id | TEXT | カード id / 昇順連結ペア id / query_log id |
+
+`UNIQUE (target_kind, target_id)` — 同じ対象を再質問しない判定の実体。
+
+### question_answers
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| id | TEXT PK | ULID |
+| question_id | TEXT | `questions` 参照 |
+| text | TEXT | 元の回答文 (整形前を残す) |
+| answered_via | TEXT | `ui` / `discord` |
+| card_id | TEXT NULL | 回答から生成されたカード |
+| created_at | INTEGER | epoch ms |
+
 ## 派生キャッシュ
 
 `embedding_cache` は task-02 の content-addressed cache。テキスト本文は保存せず、
@@ -149,6 +211,8 @@ SHA-256・model・format version とベクトルだけを保持する。カー�
 | ベクトル | derived | 判断カード | `clone_vec` | 必要 | ローカル SQLite。再生成可能 |
 | ingest cursor/run | operational | Genius | ローカル SQLite | 必要 | source_ref/path を公開 export へ含めない |
 | embedding cache | derived | 判断カード | ローカル SQLite | 必要 | 原文を保存せず hash と vector のみ |
+| query_log | user | Genius | ローカル SQLite | 必要 | loopback のみ。公開 export 禁止・カード DTO に出さない・保持期間付き (既定 30 日) |
+| questions / answers | user | Genius | ローカル SQLite | 必要 | loopback のみ。public 判定の質問だけ Discord へ送出可 |
 
 カード本文は neco 個人の判断記録であり、この DB 自体がローカル限定の個人
 ストア (Cernere の単一情報源ルールの対象外 — 氏名/email/認証情報は扱わない。

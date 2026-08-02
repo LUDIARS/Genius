@@ -23,6 +23,7 @@ import { IngestService } from "../ingest/ingest-service.js";
 import { JsonlIngestLogger } from "../ingest/jsonl-ingest-logger.js";
 import { SqliteIngestFailureStore } from "../ingest/sqlite-ingest-failure-store.js";
 import { SqliteIngestRunStore, SqliteIngestStateStore } from "../ingest/sqlite-ingest-stores.js";
+import { createQueryLogStore } from "../query/create-query-log-store.js";
 import { QueryService } from "../query/query-service.js";
 import { createReaderRegistry, type ReaderFactoryInputs } from "../readers/registry.js";
 import type { SourceName } from "../readers/source-reader.js";
@@ -82,9 +83,11 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
     const cardsRepository = new CardRepository(database);
     const vectors = new VectorStore(database, activeModel.dimension);
     const cards = new CardService(database, cardsRepository, embedder, vectors, publicCardGate);
+    const queryLog = createQueryLogStore(config.queryLog, database);
     const query = new QueryService({
       embedder,
       vectors: new SqliteQueryVectorPort(database, activeModel.dimension),
+      queryLog,
     });
     // The controlled category vocabulary lives in card_categories; the prompt
     // only carries a placeholder so there is never a second hardcoded list.

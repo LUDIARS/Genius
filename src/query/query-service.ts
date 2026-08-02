@@ -24,21 +24,40 @@ export interface QueryVectorPort {
   ): VectorCandidate[];
 }
 
+export interface QueryLogPort {
+  record(entry: {
+    input: QueryInput;
+    topSimilarity: number | null;
+    resultCount: number;
+  }): void;
+}
+
 export interface QueryServiceOptions {
   clock?: () => number;
   embedder: QueryEmbeddingPort;
   vectors: QueryVectorPort;
+  /**
+   * 検索ミス計測 (spec/feature/active-questioning.md §1.2)。API/MCP/hook の
+   * 全経路がこのサービスへ収束するため、記録点はここ 1 箇所。null = 無効。
+   */
+  queryLog?: QueryLogPort | null;
+  warningSink?: (message: string) => void;
 }
 
 export class QueryService {
   readonly #clock: () => number;
   readonly #embedder: QueryEmbeddingPort;
   readonly #vectors: QueryVectorPort;
+  readonly #queryLog: QueryLogPort | null;
+  readonly #warningSink: (message: string) => void;
 
   constructor(options: QueryServiceOptions) {
     this.#clock = options.clock ?? performance.now.bind(performance);
     this.#embedder = options.embedder;
     this.#vectors = options.vectors;
+    this.#queryLog = options.queryLog ?? null;
+    this.#warningSink =
+      options.warningSink ?? ((message) => process.stderr.write(`${message}\n`));
   }
 
   async query(input: QueryInput): Promise<QueryResult> {
@@ -79,8 +98,46 @@ export class QueryService {
         .map(scoreCandidate)
         .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))
         .slice(0, input.k);
-      return { cards, tookMs: Math.max(0, this.#clock() - started) };
+      // tookMs は検索そのものの所要時間。計測用の書き込みを測定窓に入れると
+      // API が返す latency が query_log の INSERT 分だけ水増しされるため、
+      // 先に確定させてから記録する。
+      const result = { cards, tookMs: Math.max(0, this.#clock() - started) };
+      this.#recordQuery(input, candidates, cards.length);
+      return result;
     });
+  }
+
+  /**
+   * 検索ミス計測。記録失敗はクエリ本体の結果を覆さないが、無言では捨てず
+   * warningSink へ出す (spec/feature/active-questioning.md §1.2)。
+   */
+  #recordQuery(
+    input: QueryInput,
+    candidates: readonly VectorCandidate[],
+    resultCount: number,
+  ): void {
+    if (this.#queryLog === null) return;
+    try {
+      // top1 の「類似度」は blend 済みスコアではなくセマンティック類似度
+      // (1 / (1 + distance)) — retrieval-miss の閾値判定を tier/confidence で
+      // 汚さない。
+      const best = candidates.reduce<number | null>(
+        (minimum, candidate) =>
+          minimum === null ? candidate.distance : Math.min(minimum, candidate.distance),
+        null,
+      );
+      this.#queryLog.record({
+        input,
+        topSimilarity: best === null ? null : 1 / (1 + best),
+        resultCount,
+      });
+    } catch (error) {
+      // 原因まで出す (握りつぶし禁止)。SQLite の例外文は文と制約名だけで、
+      // バインドしたクエリ文そのものは含まないため stderr へ出しても漏れない。
+      const reason =
+        error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      this.#warningSink(`Query log record failed (${reason}); the query itself succeeded`);
+    }
   }
 }
 

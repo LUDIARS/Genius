@@ -48,6 +48,41 @@ const configSchema = z
       .strict()
       .optional()
       .default({ concordiaBaseUrl: null }),
+    // 補完質問 (spec/feature/active-questioning.md §6)。節ごと省略可 (既定値で
+    // 動く) だが、書かれた値の不正は fail-fast。
+    questions: z
+      .object({
+        enabled: z.boolean().default(true),
+        maxPerRun: z.number().int().min(1).default(5),
+        maxOpen: z.number().int().min(1).default(20),
+        lowConfidenceBelow: z.number().gt(0).lt(1).default(0.5),
+        discordEnabled: z.boolean().default(true),
+      })
+      .strict()
+      .optional()
+      .default({
+        enabled: true,
+        maxPerRun: 5,
+        maxOpen: 20,
+        lowConfidenceBelow: 0.5,
+        discordEnabled: true,
+      }),
+    contradiction: z
+      .object({
+        situationSimilarityMin: z.number().gt(0).lt(1).default(0.85),
+        judgmentSimilarityMax: z.number().gt(0).lt(1).default(0.5),
+      })
+      .strict()
+      .optional()
+      .default({ situationSimilarityMin: 0.85, judgmentSimilarityMax: 0.5 }),
+    queryLog: z
+      .object({
+        enabled: z.boolean().default(true),
+        retentionDays: z.number().int().min(1).default(30),
+      })
+      .strict()
+      .optional()
+      .default({ enabled: true, retentionDays: 30 }),
   })
   .strict();
 
