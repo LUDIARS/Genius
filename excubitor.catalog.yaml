@@ -4,7 +4,7 @@ services:
   - code: genius
     name: Genius (自分クローン判断カードDB)
     tier: personal
-    project_code: genius
+    project_code: Gn
     component: backend
     port: 4230
     repo: LUDIARS/Genius
