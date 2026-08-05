@@ -1,4 +1,10 @@
-export type DistillPurpose = "cards" | "sensitive-check" | "merge-check" | "categorize";
+export type DistillPurpose =
+  | "cards"
+  | "sensitive-check"
+  | "merge-check"
+  | "categorize"
+  | "contradiction-check"
+  | "question-generation";
 
 export type PromptContent = string | AsyncIterable<string>;
 

@@ -214,7 +214,7 @@ describe("createQueryLogStore (startup wiring)", () => {
   });
 });
 
-describe("questions tables (migration 006)", () => {
+describe("questions tables (migrations 006 + 007)", () => {
   it("rejects values outside the controlled vocabularies", () => {
     const database = migratedDatabase();
     const insertQuestion = database.prepare(
@@ -229,7 +229,7 @@ describe("questions tables (migration 006)", () => {
        VALUES (?, 'q-1', ?, ?)`,
     );
     expect(() => insertTarget.run("t-1", "card", "card-a")).not.toThrow();
-    // 同じ対象を再質問しない: UNIQUE (target_kind, target_id)。
+    // 同じ dedupe 対象を再質問しない: partial UNIQUE (target_kind, target_id)。
     expect(() => insertTarget.run("t-2", "card", "card-a")).toThrowError(/UNIQUE/);
     expect(() => insertTarget.run("t-3", "spreadsheet", "x")).toThrowError(/CHECK/);
 

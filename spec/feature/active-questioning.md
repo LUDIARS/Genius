@@ -43,6 +43,10 @@ Discord へ出すのは public 判定の質問だけに限る。
 ### 1.1 矛盾検出 (②) の判定
 
 - 各 active カードについて、同一象限内で situation 埋め込みの近傍 top-k (k=5) を取る。
+- `clone_vec` は situation / judgment / rationale の合成埋め込みなので流用しない。
+  situation 単独の埋め込みは既存 `embedding_cache` を使って生成し、検出 run 中だけ
+  SQLite の一時 vec table に載せる。永続 index を増やさないため、モデル変更時の
+  reembed 正本を二重化せず、2 回目以降は content-addressed cache が再利用される。
 - 類似度が `contradiction.situationSimilarityMin` (既定 0.85) 以上のペアについて、
   judgment の類似度が `contradiction.judgmentSimilarityMax` (既定 0.5) 以下なら矛盾候補。
 - 候補は LLM に「同じ場面で相反する指示か」を判定させ、真の矛盾のみ質問化する
@@ -50,7 +54,8 @@ Discord へ出すのは public 判定の質問だけに限る。
 - 同一ペアは 1 度しか質問しない。`question_targets` は対象単位の行なので**ペア単位の
   重複排除にはならない** (片方のカードが別ペアで再登場しうる)。矛盾質問は
   `target_kind = "card-pair"`・`target_id = <2 つのカード id を昇順で連結>` の
-  1 行を追加で持ち、この行で判定する (根拠表示用に個別カード 2 行も併記する)。
+  1 行を追加で持ち、この行で判定する。根拠表示用の個別カード 2 行は
+  `card-context` として併記し、別ペアへの再登場を妨げない。
 
 ### 1.2 検索ミス計測 (④) の新規テーブル
 
@@ -89,8 +94,9 @@ Discord へ出すのは public 判定の質問だけに限る。
   `asked_at` (NULL 可 — Discord へ送った時刻。WebUI のみなら NULL),
   `answered_at` (NULL 可), `discord_message_id` (NULL 可), `created_at`。
 - `question_targets`: `id` (TEXT PK), `question_id`, `target_kind`
-  (`card|card-pair|query_log`), `target_id`。同じ対象を再質問しないための
-  重複排除キーも兼ねるので `UNIQUE (target_kind, target_id)` を張る。
+  (`card|card-context|card-pair|query_log|category`), `target_id`。
+  `card-context` は矛盾質問の表示根拠で重複可。それ以外は同じ対象を再質問しないため
+  部分 UNIQUE index を張る。`category` はカードを持たないカテゴリー偏りの対象。
 - `question_answers`: `id` (TEXT PK), `question_id`, `text`,
   `answered_via` (`ui|discord`), `card_id` (生成されたカード / NULL 可),
   `created_at`。1 質問に複数回答が付きうる (WebUI 修正・Discord の追記)。
@@ -163,6 +169,7 @@ questions.enabled            既定 true
 questions.maxPerRun          既定 5
 questions.maxOpen            既定 20
 questions.lowConfidenceBelow 既定 0.5
+questions.retrievalMissBelow  既定 0.5
 questions.discordEnabled     既定 true (notify.concordiaBaseUrl が null なら無効)
 contradiction.situationSimilarityMin  既定 0.85
 contradiction.judgmentSimilarityMax   既定 0.5

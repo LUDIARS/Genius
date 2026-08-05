@@ -25,6 +25,10 @@ import { SqliteIngestFailureStore } from "../ingest/sqlite-ingest-failure-store.
 import { SqliteIngestRunStore, SqliteIngestStateStore } from "../ingest/sqlite-ingest-stores.js";
 import { createQueryLogStore } from "../query/create-query-log-store.js";
 import { QueryService } from "../query/query-service.js";
+import { ContradictionDetector } from "../questions/contradiction-detector.js";
+import { GapRepository } from "../questions/gap-repository.js";
+import { QuestionGenerationService } from "../questions/question-generation-service.js";
+import { QuestionRepository } from "../questions/question-repository.js";
 import { createReaderRegistry, type ReaderFactoryInputs } from "../readers/registry.js";
 import type { SourceName } from "../readers/source-reader.js";
 import { CardService } from "../services/card-service.js";
@@ -39,6 +43,8 @@ export interface GeniusRuntime {
   config: LoadedGeniusConfig;
   database: GeniusDatabase;
   embedder: EmbeddingClient;
+  /** Internal Q4 service. Q8 wires it to ingest; Q5 exposes queue operations. */
+  questions: QuestionGenerationService;
   services: ApiServices;
 }
 
@@ -101,6 +107,24 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       prompt,
       publicCardGate,
     });
+    const questionRepository = new QuestionRepository(database);
+    const gapRepository = new GapRepository(database);
+    const questions = new QuestionGenerationService({
+      config: config.questions,
+      contradictions: new ContradictionDetector({
+        database,
+        embedder,
+        gaps: gapRepository,
+        llm,
+        questions: questionRepository,
+        situationSimilarityMin: config.contradiction.situationSimilarityMin,
+        judgmentSimilarityMax: config.contradiction.judgmentSimilarityMax,
+      }),
+      gaps: gapRepository,
+      llm,
+      publicCardGate,
+      questions: questionRepository,
+    });
     const readers = createReaderRegistry(config.sources satisfies ReaderFactoryInputs);
     const ingest = new IngestService({
       distiller,
@@ -136,6 +160,7 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       config,
       database,
       embedder,
+      questions,
       services,
     };
   } catch (error) {

@@ -63,6 +63,8 @@ export interface QuestionsConfig {
   maxPerRun: number;
   maxOpen: number;
   lowConfidenceBelow: number;
+  /** Query top1 similarity below this value is a retrieval-miss gap. */
+  retrievalMissBelow: number;
   /** notify.concordiaBaseUrl が null なら実質無効 (起動時に 1 行明示する)。 */
   discordEnabled: boolean;
 }

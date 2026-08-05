@@ -64,6 +64,7 @@ describe("database migrations", () => {
         "idx_query_log_created_at",
         "idx_questions_status",
         "idx_question_targets_question_id",
+        "idx_question_targets_dedupe",
         "idx_question_answers_question_id",
         "idx_embedding_meta_one_active",
       ]),
@@ -181,5 +182,26 @@ describe("database migrations", () => {
       )
       .all(vector(0.9, 0.1), 2);
     expect(rows.map((row) => row.card_id)).toEqual(["near", "far"]);
+  });
+
+  it("deduplicates question subjects while allowing cards to appear in several pairs", () => {
+    const database = migratedMemoryDatabase();
+    const insertQuestion = database.prepare(
+      `INSERT INTO questions(
+         id, question, context, category, domain, visibility, gap_kind, status, created_at
+       ) VALUES (?, 'q', 'c', 'general', 'work', 'sensitive', 'contradiction', 'open', 1)`,
+    );
+    insertQuestion.run("Q1");
+    insertQuestion.run("Q2");
+    const insertTarget = database.prepare(
+      "INSERT INTO question_targets(id, question_id, target_kind, target_id) VALUES (?, ?, ?, ?)",
+    );
+
+    expect(() => insertTarget.run("T1", "Q1", "card-context", "CARD1")).not.toThrow();
+    expect(() => insertTarget.run("T2", "Q2", "card-context", "CARD1")).not.toThrow();
+    expect(() => insertTarget.run("T3", "Q1", "card-pair", "CARD1:CARD2")).not.toThrow();
+    expect(() => insertTarget.run("T4", "Q2", "card-pair", "CARD1:CARD2")).toThrow();
+    expect(() => insertTarget.run("T5", "Q1", "category", "review")).not.toThrow();
+    expect(() => insertTarget.run("T6", "Q2", "category", "review")).toThrow();
   });
 });

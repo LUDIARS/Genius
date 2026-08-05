@@ -153,7 +153,7 @@ PK は `(source, locator)` — 再失敗は同一行を上書きし `resolved_at
 | result_count | INTEGER | 返した件数 |
 | created_at | INTEGER | epoch ms |
 
-## questions / question_targets / question_answers — 補完質問 (migration 006)
+## questions / question_targets / question_answers — 補完質問 (migration 006 + 007)
 
 能動学習の質問キュー (spec/feature/active-questioning.md §2.1)。統制語彙
 (gap_kind / status / target_kind / answered_via) は CHECK で fail-fast。
@@ -181,10 +181,12 @@ PK は `(source, locator)` — 再失敗は同一行を上書きし `resolved_at
 |---|---|---|
 | id | TEXT PK | ULID |
 | question_id | TEXT | `questions` 参照 |
-| target_kind | TEXT | `card` / `card-pair` / `query_log` |
-| target_id | TEXT | カード id / 昇順連結ペア id / query_log id |
+| target_kind | TEXT | `card` / `card-context` / `card-pair` / `query_log` / `category` |
+| target_id | TEXT | カード id / 昇順連結ペア id / query_log id / category 名 |
 
-`UNIQUE (target_kind, target_id)` — 同じ対象を再質問しない判定の実体。
+`card-context` は矛盾質問の表示根拠で、同じカードが別ペアにも参加できるため重複可。
+`card` / `card-pair` / `query_log` / `category` には部分 UNIQUE index
+`idx_question_targets_dedupe` を張り、同じ対象を再質問しない判定の実体にする。
 
 ### question_answers
 

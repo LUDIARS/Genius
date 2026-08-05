@@ -56,6 +56,7 @@ const configSchema = z
         maxPerRun: z.number().int().min(1).default(5),
         maxOpen: z.number().int().min(1).default(20),
         lowConfidenceBelow: z.number().gt(0).lt(1).default(0.5),
+        retrievalMissBelow: z.number().gt(0).lt(1).default(0.5),
         discordEnabled: z.boolean().default(true),
       })
       .strict()
@@ -65,6 +66,7 @@ const configSchema = z
         maxPerRun: 5,
         maxOpen: 20,
         lowConfidenceBelow: 0.5,
+        retrievalMissBelow: 0.5,
         discordEnabled: true,
       }),
     contradiction: z

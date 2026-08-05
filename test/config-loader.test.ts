@@ -140,6 +140,7 @@ describe("loadConfig", () => {
       maxPerRun: 5,
       maxOpen: 20,
       lowConfidenceBelow: 0.5,
+      retrievalMissBelow: 0.5,
       discordEnabled: true,
     });
     expect(config.contradiction).toEqual({
