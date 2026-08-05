@@ -224,7 +224,9 @@ async function runCategorize(
     });
     const result = await service.run();
     stdout(`${JSON.stringify(result, null, 2)}\n`);
-    return 0;
+    // 部分失敗は summary + failed 件数で報告済みなので正常終了する (失敗カードは
+    // NULL のまま次回対象)。全件失敗は backend 側の系統障害なので非 0 で返す。
+    return result.scanned > 0 && result.failed === result.scanned ? 1 : 0;
   } finally {
     database.close();
   }

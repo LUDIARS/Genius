@@ -24,6 +24,7 @@ export interface CategorizeBackfillOptions {
 export interface CategorizeBackfillResult {
   scanned: number;
   categorized: number;
+  failed: number;
 }
 
 /**
@@ -67,25 +68,45 @@ export class CategorizeBackfillService {
     );
     const systemPrompt = this.#buildSystemPrompt();
     let categorized = 0;
+    let failed = 0;
     for (const [index, row] of rows.entries()) {
-      const result = await requestValidatedJson(
-        this.#llm,
-        {
-          purpose: "categorize",
-          systemPrompt,
-          prompt: JSON.stringify({ situation: row.situation, judgment: row.judgment }),
-        },
-        this.#resultSchema,
-      );
-      const changes = update.run(result.category, row.id).changes;
+      // 1 カードの失敗 (claude CLI timeout・statement 不正など) でプロセスごと
+      // 死なせない (Memoria #736)。分類だけでなく UPDATE の失敗も同じ境界で
+      // 隔離する。失敗カードは category NULL のまま残るので、次回の
+      // categorize --missing が同じ SELECT で拾い直す。
+      let category: string;
+      let changes: number;
+      try {
+        const result = await requestValidatedJson(
+          this.#llm,
+          {
+            purpose: "categorize",
+            systemPrompt,
+            prompt: JSON.stringify({ situation: row.situation, judgment: row.judgment }),
+          },
+          this.#resultSchema,
+        );
+        category = result.category;
+        changes = update.run(category, row.id).changes;
+      } catch (error) {
+        failed += 1;
+        const name = error instanceof Error ? error.name : "UnknownError";
+        this.#stdout(
+          `[categorize] ${index + 1}/${rows.length} ${row.id} failed (${name}); skipping\n`,
+        );
+        continue;
+      }
       if (changes === 1) categorized += 1;
       this.#stdout(
-        `[categorize] ${index + 1}/${rows.length} ${row.id} -> ${result.category}` +
+        `[categorize] ${index + 1}/${rows.length} ${row.id} -> ${category}` +
           `${changes === 1 ? "" : " (skipped: categorized concurrently)"}\n`,
       );
     }
-    this.#stdout(`[categorize] done: ${categorized}/${rows.length} card(s) categorized\n`);
-    return { scanned: rows.length, categorized };
+    this.#stdout(
+      `[categorize] done: ${categorized}/${rows.length} card(s) categorized` +
+        `${failed === 0 ? "" : `, ${failed} failed (left NULL for the next run)`}\n`,
+    );
+    return { scanned: rows.length, categorized, failed };
   }
 
   #buildSystemPrompt(): string {

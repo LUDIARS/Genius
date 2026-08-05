@@ -35,8 +35,14 @@ function insertCard(
   database: GeniusDatabase,
   sourceRef: string,
   category: string | null = null,
+  // 既定の ULID は同一ミリ秒内で順序が保証されないため、`ORDER BY id ASC` に
+  // 依存するテストは id を明示して処理順を固定する。
+  id?: string,
 ): CloneCard {
-  return new CardRepository(database).create({
+  const repository = id === undefined
+    ? new CardRepository(database)
+    : new CardRepository(database, { idFactory: () => id });
+  return repository.create({
     domain: "work",
     visibility: "sensitive",
     category,
@@ -78,7 +84,7 @@ describe("CategorizeBackfillService", () => {
 
       const result = await createService(database, llm, (text) => output.push(text)).run();
 
-      expect(result).toEqual({ scanned: 2, categorized: 2 });
+      expect(result).toEqual({ scanned: 2, categorized: 2, failed: 0 });
       const repository = new CardRepository(database);
       expect(repository.requireById(first.id).category).toBe("impl-design");
       expect(repository.requireById(second.id).category).toBe("workflow");
@@ -100,17 +106,59 @@ describe("CategorizeBackfillService", () => {
     }
   });
 
-  it("fails fast on a category outside the controlled vocabulary", async () => {
+  it("skips a card whose classification keeps failing and continues (Memoria #736)", async () => {
     const database = seededDatabase();
     try {
-      const card = insertCard(database, "fixture:reject");
+      const failing = insertCard(database, "fixture:reject", null, "card-1-reject");
+      const surviving = insertCard(database, "fixture:survive", null, "card-2-survive");
       const offVocabulary = JSON.stringify({ category: "not-a-category" });
-      const llm = new QueueLlm([offVocabulary, offVocabulary, offVocabulary]);
+      const llm = new QueueLlm([
+        // 1 枚目は 3 回とも統制外カテゴリー → per-card 失敗として skip される。
+        offVocabulary,
+        offVocabulary,
+        offVocabulary,
+        JSON.stringify({ category: "workflow" }),
+      ]);
+      const output: string[] = [];
 
-      await expect(createService(database, llm, () => {}).run()).rejects.toThrow(
-        "after 3 attempts",
+      const result = await createService(database, llm, (text) => output.push(text)).run();
+
+      expect(result).toEqual({ scanned: 2, categorized: 1, failed: 1 });
+      const repository = new CardRepository(database);
+      // 失敗カードは NULL のまま残り、次回の categorize --missing が拾い直す。
+      expect(repository.requireById(failing.id).category).toBeNull();
+      expect(repository.requireById(surviving.id).category).toBe("workflow");
+      const joined = output.join("");
+      expect(joined).toContain(`1/2 ${failing.id} failed`);
+      expect(joined).toContain("1 failed (left NULL for the next run)");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("counts a persistence failure as a skipped card and keeps going (Memoria #736)", async () => {
+    const database = seededDatabase();
+    try {
+      const rejected = insertCard(database, "fixture:persist-fails", null, "card-1-rejected");
+      const surviving = insertCard(database, "fixture:persist-ok", null, "card-2-survive");
+      // UPDATE 側の失敗 (制約違反・trigger など) も per-card 境界で隔離される。
+      database.exec(
+        "CREATE TRIGGER reject_categorize BEFORE UPDATE OF category ON clone_cards" +
+          ` WHEN NEW.id = '${rejected.id}' BEGIN SELECT RAISE(ABORT, 'categorize rejected'); END`,
       );
-      expect(new CardRepository(database).requireById(card.id).category).toBeNull();
+      const llm = new QueueLlm([
+        JSON.stringify({ category: "workflow" }),
+        JSON.stringify({ category: "workflow" }),
+      ]);
+      const output: string[] = [];
+
+      const result = await createService(database, llm, (text) => output.push(text)).run();
+
+      expect(result).toEqual({ scanned: 2, categorized: 1, failed: 1 });
+      const repository = new CardRepository(database);
+      expect(repository.requireById(rejected.id).category).toBeNull();
+      expect(repository.requireById(surviving.id).category).toBe("workflow");
+      expect(output.join("")).toContain(`1/2 ${rejected.id} failed`);
     } finally {
       database.close();
     }
