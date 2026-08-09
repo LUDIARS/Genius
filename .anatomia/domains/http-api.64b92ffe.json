@@ -1,6 +1,6 @@
 {
   "name": "http-api",
-  "description": "Hono HTTP service (loopback bind), clone query/query-batch, card CRUD/list/supersede-chain, ingest run endpoints, healthz, stats, middleware, and UI static serving.",
+  "description": "Hono HTTP service (loopback bind by default, configurable published bind), exact browser-origin guard, clone query/query-batch, card CRUD/list/supersede-chain, ingest run endpoints, healthz, stats, middleware, and UI static serving.",
   "presetRules": [
     {
       "preset": "couplingCap",
@@ -68,14 +68,15 @@
     }
   ],
   "templateRules": [],
-  "cardTemplate": "Summarise the \"http-api\" domain: Hono HTTP service (loopback bind), clone query/query-batch, card CRUD/list/supersede-chain, ingest run endpoints, healthz, stats, middleware, and UI static serving.",
+  "cardTemplate": "Summarise the \"http-api\" domain: Hono HTTP service (loopback bind by default, configurable published bind), exact browser-origin guard, clone query/query-batch, card CRUD/list/supersede-chain, ingest run endpoints, healthz, stats, middleware, and UI static serving.",
   "source": "spec-draft",
   "mechanics": [],
   "specRefs": [
     "Genius — 自分クローン判断カード DB / HTTP API",
+    "Genius 運用化設計 / 5. カード棚卸し WebUI (#7)",
     "Genius 運用化設計 / 2. sensitive/public ゲートの投機的実行 (#1)",
     "Genius 本体設計 / 3. 四象限モデル"
   ],
-  "rationale": "api/* directories (routes, middleware, ui) plus stats form the loopback HTTP surface — one delivery domain with shared loopback/no-auth constraints.",
+  "rationale": "api/* directories (routes, middleware, ui) plus stats form one HTTP delivery domain with shared no-auth, bind, and browser-origin constraints.",
   "updatedAt": "2026-08-02T08:02:27.666Z"
 }

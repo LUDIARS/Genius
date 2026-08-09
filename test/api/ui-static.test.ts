@@ -240,6 +240,39 @@ describe("browser write protections", () => {
     expect(uiFromRemote.status).toBe(403);
   });
 
+  it("accepts a declared origin and nothing that merely resembles it", async () => {
+    const app = createApp(services, { allowedOrigins: ["https://genius.example.com"] });
+
+    const declared = await app.request("/api/clone/cards", {
+      headers: { origin: "https://genius.example.com" },
+    });
+    // 書き込みもガードを通ること。 スタブの実行結果ではなく「拒否されない」
+    // ことだけを見る (このテストの責務は origin 判定であって card 作成ではない)。
+    const declaredWrite = await app.request("/api/clone/cards", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://genius.example.com",
+      },
+      body: CARD_BODY,
+    });
+    const otherScheme = await app.request("/api/clone/cards", {
+      headers: { origin: "http://genius.example.com" },
+    });
+    const subdomain = await app.request("/api/clone/cards", {
+      headers: { origin: "https://genius.example.com.evil.example" },
+    });
+    const undeclared = await app.request("/api/clone/cards", {
+      headers: { origin: "https://evil.example" },
+    });
+
+    expect(declared.status).toBe(200);
+    expect(declaredWrite.status).not.toBe(403);
+    expect(otherScheme.status).toBe(403);
+    expect(subdomain.status).toBe(403);
+    expect(undeclared.status).toBe(403);
+  });
+
   it("accepts loopback origins so the served UI can call the API", async () => {
     const app = createApp(services);
 

@@ -1,9 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
+import { normalizeAllowedOrigin } from "./allowed-origin.js";
 import { ConfigError } from "./errors.js";
 import { normalizeLoopbackHttpUrl } from "./loopback-url.js";
 import type { LoadedGeniusConfig, SourceConfig } from "./types.js";
+
+/** Reachable only from this machine unless the operator says otherwise. */
+const DEFAULT_BIND_HOST = "127.0.0.1";
 
 const sourceConfigSchema = z
   .object({
@@ -20,6 +24,31 @@ const sourceConfigSchema = z
 const configSchema = z
   .object({
     port: z.number().int().min(1).max(65_535),
+    // server 節が無い既存 config はこれまでどおり loopback 限定で動く。書かれた
+    // 値の不正は fail-fast (無言で loopback に落とさない)。
+    server: z
+      .object({
+        bindHost: z.string().trim().min(1).default(DEFAULT_BIND_HOST),
+        allowedOrigins: z
+          .array(z.string().trim().min(1))
+          .default([])
+          // @implements SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY
+          .transform((origins, ctx) => {
+            try {
+              return origins.map((origin, index) =>
+                normalizeAllowedOrigin(origin, `server.allowedOrigins[${index}]`));
+            } catch (error) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: error instanceof Error ? error.message : String(error),
+              });
+              return z.NEVER;
+            }
+          }),
+      })
+      .strict()
+      .optional()
+      .default({ bindHost: DEFAULT_BIND_HOST, allowedOrigins: [] }),
     dataDir: z.string().trim().min(1),
     embedding: z
       .object({
@@ -90,6 +119,8 @@ const configSchema = z
 
 export const CONFIG_ENVIRONMENT_VARIABLES = {
   port: "GENIUS_PORT",
+  bindHost: "GENIUS_BIND_HOST",
+  allowedOrigins: "GENIUS_ALLOWED_ORIGINS",
   dataDir: "GENIUS_DATA_DIR",
   embeddingBaseUrl: "GENIUS_EMBEDDING_BASE_URL",
   embeddingModel: "GENIUS_EMBEDDING_MODEL",
@@ -170,6 +201,17 @@ function applyEnvironmentOverrides(
 
   const port = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.port);
   if (port !== undefined) result.port = strictInteger(port, CONFIG_ENVIRONMENT_VARIABLES.port);
+  const bindHost = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.bindHost);
+  if (bindHost !== undefined) objectAt(result, "server").bindHost = bindHost;
+  const allowedOrigins = environmentValue(
+    environment,
+    CONFIG_ENVIRONMENT_VARIABLES.allowedOrigins,
+  );
+  if (allowedOrigins !== undefined) {
+    objectAt(result, "server").allowedOrigins = allowedOrigins
+      .split(",")
+      .map((origin) => origin.trim());
+  }
   const dataDir = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.dataDir);
   if (dataDir !== undefined) result.dataDir = dataDir;
 

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ApiServices } from "./contracts.js";
 import { jsonContentTypeGuard } from "./middleware/json-content-type-guard.js";
-import { loopbackOriginGuard } from "./middleware/loopback-origin-guard.js";
+import { originGuard } from "./middleware/origin-guard.js";
 import { registerCardRoutes } from "./routes/cards.js";
 import { registerCategoryRoutes } from "./routes/categories.js";
 import { registerHealthRoute } from "./routes/health.js";
@@ -19,6 +19,11 @@ export const MAX_API_BODY_BYTES = 512 * 1024;
 export interface CreateAppOptions {
   /** Directory served under `/ui/`. Defaults to the checked-in `ui/` folder. */
   uiRoot?: string;
+  /**
+   * Non-loopback origins the operator declared in `server.allowedOrigins`.
+   * Empty (the default) keeps the browser surface loopback-only.
+   */
+  allowedOrigins?: readonly string[];
 }
 
 export function createApp(services: ApiServices, options: CreateAppOptions = {}): Hono {
@@ -27,7 +32,7 @@ export function createApp(services: ApiServices, options: CreateAppOptions = {})
   // refused before any body is read (spec/feature/operations.md Section 5).
   // No CORS middleware is installed here — cross-origin reads must stay
   // impossible by omission, so do not add one.
-  app.use("*", loopbackOriginGuard());
+  app.use("*", originGuard(options.allowedOrigins ?? []));
   app.use("*", jsonContentTypeGuard());
   app.use("*", bodyLimit({
     maxSize: MAX_API_BODY_BYTES,

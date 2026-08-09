@@ -79,8 +79,24 @@ export interface QueryLogConfig {
   retentionDays: number;
 }
 
+export interface ServerConfig {
+  /**
+   * Interface the HTTP listener binds to. `127.0.0.1` keeps Genius reachable
+   * only from this machine; `0.0.0.0` publishes it to every interface, which is
+   * what a tunnel or reverse proxy in front of Genius needs.
+   */
+  bindHost: string;
+  /**
+   * Origins allowed in addition to loopback. Genius has no authentication, so
+   * an entry here is a deliberate statement that the named front door is
+   * already access-controlled by something else.
+   */
+  allowedOrigins: string[];
+}
+
 export interface GeniusConfig {
   port: number;
+  server: ServerConfig;
   dataDir: string;
   embedding: EmbeddingConfig;
   distill: DistillConfig;

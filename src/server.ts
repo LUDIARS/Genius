@@ -4,11 +4,21 @@ import { closeServerAndRuntime } from "./runtime/shutdown-resources.js";
 
 async function main(): Promise<void> {
   const runtime = await createRuntime();
+  const { bindHost, allowedOrigins } = runtime.config.server;
   const server = serve({
     fetch: runtime.app.fetch,
-    hostname: "127.0.0.1",
+    hostname: bindHost,
     port: runtime.config.port,
   });
+  // Genius は認証を持たない。 loopback の外に出す判断は設定に書かれた通りに
+  // 実行するが、 黙って実行はしない (spec/feature/operations.md §5)。
+  process.stderr.write(
+    `[listen] ${JSON.stringify(bindHost)}:${runtime.config.port}`
+    + (isLoopbackBind(bindHost)
+      ? "\n"
+      : ` — reachable beyond this machine; access control is expected in front of Genius.`
+        + ` allowedOrigins=${allowedOrigins.length}\n`),
+  );
   let isClosing = false;
   const shutdown = (signal: string, exitCode: number): void => {
     if (isClosing) return;
@@ -40,6 +50,10 @@ async function main(): Promise<void> {
     process.stderr.write(`[fatal] unhandledRejection: ${detail}\n`);
     shutdown("unhandledRejection", 1);
   });
+}
+
+function isLoopbackBind(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
 function closeServer(

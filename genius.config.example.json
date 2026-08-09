@@ -1,5 +1,9 @@
 {
   "port": 4230,
+  "server": {
+    "bindHost": "127.0.0.1",
+    "allowedOrigins": []
+  },
   "dataDir": "./data",
   "embedding": {
     "baseUrl": "http://127.0.0.1:11434",

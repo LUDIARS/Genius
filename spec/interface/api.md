@@ -23,7 +23,8 @@
   (epoch ms / `null`) を含む。公開 export DTO は retire 済み・supersede 済みを
   そもそも返さないため、`supersededBy` と同様に `retiredAt` も持たない。
 - DELETE は提供しない (supersede / retire で代替。カテゴリーも削除不可)。
-- 認証なし (127.0.0.1 bind のみ。0.0.0.0 で listen しない)。
+- Genius 自身は認証を持たない。待ち受け先は `server.bindHost` (既定 `127.0.0.1`)。
+  loopback 以外へ bind する場合は前段のアクセス制御を必須とする。
 
 ## 棚卸し WebUI (`/ui/`)
 
@@ -47,9 +48,10 @@
 - 更新系 (POST / PATCH / PUT) は `Content-Type: application/json` 必須。
   media type が違えば **415** (単純フォーム送信を弾く)。パラメータ付き
   (`; charset=utf-8`) は許容。
-- `Origin` ヘッダがある場合、loopback origin 以外は **403**
-  (`src/config/loopback-url.ts` の判定を再利用)。`Origin` なしのリクエスト
-  (CLI・MCP・hook) は従来どおり通る。
+- `Origin` ヘッダがある場合、loopback origin または `server.allowedOrigins` に
+  完全一致する origin だけを許可し、それ以外は **403**。ワイルドカードや
+  サブドメイン一致は行わない。`Origin` なしのリクエスト (CLI・MCP・hook) は
+  従来どおり通る (`SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY`)。
 - 非活性化は独立した 2 系統。UI もパネルを分ける:
   - **Supersede** (置換あり): 「既存カード ID で置換」「新規カードを作って置換」
     「置換リンクの解除」の 3 操作。
@@ -96,6 +98,10 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
 ```jsonc
 {
   "port": 4230,
+  "server": {
+    "bindHost": "127.0.0.1", // loopback 以外は前段のアクセス制御が必須
+    "allowedOrigins": []      // loopback 以外に許可する browser origin の完全一致リスト
+  },
   "dataDir": "./data",
   "embedding": {
     "baseUrl": "http://127.0.0.1:11434",
@@ -131,6 +137,9 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
 - `null` のソースは無効。ingest 指定時は明示エラー (`--allow-missing` でのみ
   スキップ+警告出力)。
 - 個人絶対パスをソースコードへハードコードしない (HARNESS 地雷ルール)。
+- `GENIUS_BIND_HOST` と `GENIUS_ALLOWED_ORIGINS` (カンマ区切り) で `server` を
+  override できる。origin の空要素・path・query・fragment・資格情報・非 HTTP(S) scheme は
+  起動時に拒否する。
 - `GENIUS_EMBEDDING_NUM_GPU` で `numGpu` を明示 override できる。自動 CPU
   フォールバックは行わない。
 - `GENIUS_NOTIFY_CONCORDIA_BASE_URL` で `notify.concordiaBaseUrl` を override できる。

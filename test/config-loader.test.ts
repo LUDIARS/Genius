@@ -81,6 +81,71 @@ describe("loadConfig", () => {
     ).toThrowError(ConfigError);
   });
 
+  it("keeps a config without a server section loopback-only", () => {
+    const config = loadConfig({ configPath: writeConfig(fixtureDirectory()), environment: {} });
+
+    expect(config.server.bindHost).toBe("127.0.0.1");
+    expect(config.server.allowedOrigins).toEqual([]);
+  });
+
+  it("publishes the listener and the declared origin when both are configured", () => {
+    const config = validConfig();
+    config.server = {
+      bindHost: "0.0.0.0",
+      allowedOrigins: ["https://genius.example.com"],
+    };
+    const configPath = writeConfig(fixtureDirectory(), config);
+
+    const loaded = loadConfig({ configPath, environment: {} });
+
+    expect(loaded.server.bindHost).toBe("0.0.0.0");
+    expect(loaded.server.allowedOrigins).toEqual(["https://genius.example.com"]);
+  });
+
+  it("accepts the documented server overrides from the environment", () => {
+    const configPath = writeConfig(fixtureDirectory());
+
+    const loaded = loadConfig({
+      configPath,
+      environment: {
+        GENIUS_BIND_HOST: "0.0.0.0",
+        GENIUS_ALLOWED_ORIGINS: "https://a.example.com, https://b.example.com",
+      },
+    });
+
+    expect(loaded.server.bindHost).toBe("0.0.0.0");
+    expect(loaded.server.allowedOrigins).toEqual([
+      "https://a.example.com",
+      "https://b.example.com",
+    ]);
+  });
+
+  it("rejects empty entries in the origin environment override", () => {
+    const configPath = writeConfig(fixtureDirectory());
+
+    expect(() => loadConfig({
+      configPath,
+      environment: {
+        GENIUS_ALLOWED_ORIGINS: "https://a.example.com,,https://b.example.com",
+      },
+    })).toThrowError(ConfigError);
+  });
+
+  it("rejects an allowed origin that is not exactly an origin", () => {
+    for (const origin of [
+      "https://genius.example.com/ui",
+      "https://user:pw@genius.example.com",
+      "genius.example.com",
+      "ftp://genius.example.com",
+    ]) {
+      const config = validConfig();
+      config.server = { bindHost: "127.0.0.1", allowedOrigins: [origin] };
+      const configPath = writeConfig(fixtureDirectory(), config);
+
+      expect(() => loadConfig({ configPath, environment: {} })).toThrowError(ConfigError);
+    }
+  });
+
   it("rejects a non-loopback embedding URL", () => {
     const directory = fixtureDirectory();
     const config = validConfig();

@@ -6,7 +6,7 @@ Genius は、過去の作業記録から「この場面ならどう判断する�
 retrieval-conditioned judgment (擬似 FT) を採用します。
 
 - 四象限: `domain: work|hobby` × `visibility: public|sensitive`
-- HTTP: Hono、loopback bind のみ
+- HTTP: Hono、既定は loopback bind (`server.bindHost` で公開可)
 - DB: better-sqlite3 + sqlite-vec (`data/genius.db`、gitignore)
 - 埋め込み: ローカル Ollama `bge-m3`、1024 次元
 - 蒸留: `claude-cli` またはローカル Ollama
@@ -14,8 +14,12 @@ retrieval-conditioned judgment (擬似 FT) を採用します。
 ## セキュリティ境界
 
 - 埋め込みは全象限ともローカル Ollama のみです。外部 embedding URL は設定時に拒否します。
-- HTTP API とクライアント接続先は loopback のみに制限されます。認証機能はないため、
-  reverse proxy や `0.0.0.0` bind で公開しないでください。
+- 待ち受け先は `server.bindHost` (既定 `127.0.0.1`) です。Genius 自身は認証を持たない
+  ため、`0.0.0.0` を指定して公開する場合は、**前段でアクセス制御が済んでいること**が
+  前提になります (Cloudflare Tunnel + Access 等)。公開 bind 時は起動ログに 1 行出ます。
+- ブラウザからのアクセスは loopback origin と `server.allowedOrigins` に**完全一致**で
+  列挙した origin だけが通ります。ワイルドカードやサブドメイン一致はありません。
+- クライアント (MCP / hook / eval) の接続先は従来どおり loopback のみです。
 - ソースリーダは読み取り専用です。元データを移動・更新・削除しません。
 - `data/`、`logs/`、`genius.config.json` はコミットしません。公開 export は
   `visibility=public` の active カードだけを返し、`sourceRef` を含めません。
@@ -83,6 +87,8 @@ Invoke-RestMethod -Uri http://127.0.0.1:4230/healthz
 | 環境変数 | 対象 |
 |---|---|
 | `GENIUS_PORT` | HTTP port |
+| `GENIUS_BIND_HOST` | 待ち受け interface。既定 `127.0.0.1`、公開するなら `0.0.0.0` |
+| `GENIUS_ALLOWED_ORIGINS` | loopback 以外に許可する origin。カンマ区切りの完全一致 |
 | `GENIUS_DATA_DIR` | SQLite と派生データの保存ディレクトリ |
 | `GENIUS_EMBEDDING_BASE_URL` | Ollama embedding URL (loopback のみ) |
 | `GENIUS_EMBEDDING_MODEL` | embedding model |
@@ -269,14 +275,15 @@ supersede 済み / retire 済みの表示切替、カード詳細 (本文・sour
 
 注意点:
 
-- **公開禁止**。認証はなく、bind は `127.0.0.1` 固定です。リバースプロキシ等で
-  外部へ露出させないでください。
+- Genius 自身に認証はありません。既定の `127.0.0.1` 以外へ bind する場合は、
+  前段でアクセス制御し、ブラウザ側の origin を `server.allowedOrigins` に完全一致で
+  列挙してください。
 - sensitive→public 昇格はサーバ側で二重チェックが再実行され、拒否されると 409 に
   なります。UI は拒否理由をそのまま表示し、成功したようには見せません。
 - UI からの更新は `changedBy: "ui"` として `clone_card_revisions` に記録されます
   (記録されるのは変更された列名のみ)。
 - ブラウザ経由の防御 (CORS 非提供・更新系の `Content-Type: application/json` 必須・
-  非 loopback `Origin` の拒否) は `spec/interface/api.md` を参照。
+  loopback または明示許可されていない `Origin` の拒否) は `spec/interface/api.md` を参照。
 
 ## MCP server
 

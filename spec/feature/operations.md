@@ -186,17 +186,28 @@ status: draft (2026-07-30 neco 方針決定の反映)
 
 ## 5. カード棚卸し WebUI (#7)
 
+Traceability ID: `SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY`
+
 - Hono に `/ui/` を追加し、静的 SPA (ビルドレスの素の HTML+JS または Vite 静的出力)
-  を loopback 限定で配信する (`src/server.ts` は `hostname: "127.0.0.1"` 固定)。
-  認証なし・公開禁止は本体と同じ制約。
+  を配信する。Genius 自身は認証を持たない。
+- 待ち受け先は設定で決める (`server.bindHost`、既定 `127.0.0.1`)。既定のままなら
+  この機で完結し、外からは届かない。`0.0.0.0` を書いた場合はすべての interface へ
+  公開されるので、**Genius の前段でアクセス制御が済んでいること**が前提になる
+  (Cloudflare Tunnel 等)。公開側で待ち受ける場合、`src/server.ts` は起動時に
+  1 行明示する (無言で公開しない)。
 - ただし「認証なしの更新系 UI をブラウザに置く」ため、ブラウザ経由の
   クロスオリジン攻撃面が新たに立つ (ユーザが開いている任意のページから
-  loopback の更新 API を叩ける)。最低限の対策を実装に含める:
+  更新 API を叩ける)。最低限の対策を実装に含める:
   - CORS を追加しない (`Access-Control-Allow-Origin` を返さない)。
   - 更新系 (POST/PATCH) は `Content-Type: application/json` を必須にし、
     単純フォーム送信を弾く。
-  - `Origin` ヘッダがある場合は loopback origin のみ許可する
-    (既存の `loopback-url.ts` の判定を再利用できる)。
+  - `Origin` ヘッダがある場合は loopback origin、および
+    `server.allowedOrigins` に明示された origin のみ許可する
+    (`loopback-url.ts` の判定 + 完全一致リスト)。
+  - `allowedOrigins` は**完全一致の列挙**であり、ワイルドカードやサブドメイン
+    一致を実装しない。scheme・host・port が 1 つでも違えば別 origin として拒否する。
+    設定値は origin の形 (path・クエリ・資格情報を含まない) でなければ起動時に
+    fail-fast させる。
 - 機能:
   - 一覧: 象限・カテゴリー・タグ・全文 (`q`) フィルタ、作成日/confidence ソート、
     supersede 済み / retire 済みの表示切替 (独立した 2 トグル)

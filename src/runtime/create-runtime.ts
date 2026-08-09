@@ -146,7 +146,7 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
     };
     let closePromise: Promise<void> | null = null;
     return {
-      app: createApp(services),
+      app: createApp(services, { allowedOrigins: config.server.allowedOrigins }),
       close: () => {
         closePromise ??= (async () => {
           try {
