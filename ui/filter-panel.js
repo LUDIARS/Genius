@@ -62,17 +62,10 @@ export function createFilterPanel({ onApply }) {
     };
   }
 
+  // Applying is deliberately explicit: initial filter edits must not fetch a
+  // page before the reviewer chooses to load one.
+  /** @implements SPEC-UI-LAZY-LIST */
   const apply = () => onApply(read());
-
-  const toggles = [includeSuperseded, includeRetired];
-  for (const control of [domain, visibility, category, sort, order, limit, ...toggles]) {
-    control.addEventListener("change", apply);
-  }
-  for (const control of [tag, query]) {
-    control.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") apply();
-    });
-  }
 
   const element = el("section", { className: "panel filter-panel" }, [
     el("h2", { textContent: "Filters" }),

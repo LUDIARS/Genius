@@ -25,6 +25,22 @@ export function createCardList({ onSelect, onPage }) {
 
   return {
     element,
+    /**
+     * @implements SPEC-UI-LAZY-LIST
+     * Shown before any page has been requested. The counts in the header come
+     * from `/stats`, so the review can start without paying for a card page
+     * that was never asked for.
+     */
+    renderIdle() {
+      clear(rows);
+      rows.append(el("p", {
+        className: "empty",
+        textContent: "Set the filters you want, then press Apply to load cards.",
+      }));
+      previous.disabled = true;
+      next.disabled = true;
+      summary.textContent = "";
+    },
     render(cards, { offset, limit, selectedId }) {
       clear(rows);
       if (cards.length === 0) {

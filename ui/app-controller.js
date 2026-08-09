@@ -23,11 +23,16 @@ export function createAppController() {
   let offset = 0;
   let selectedId = null;
   let currentCard = null;
+  // No page is fetched until Apply is pressed. Writes and selections must not
+  // silently turn the idle list into a requested one, so every refresh path
+  // goes through refreshListIfRequested().
+  let listRequested = false;
 
   const filterPanel = createFilterPanel({
     onApply: (next) => {
       filters = next;
       offset = 0;
+      listRequested = true;
       void reloadList();
     },
   });
@@ -87,10 +92,13 @@ export function createAppController() {
     ]),
   ]);
 
+  /** @implements SPEC-UI-LAZY-LIST */
   async function start() {
     filters = filterPanel.read();
     await Promise.all([reloadCategories(), reloadStats()]);
-    await reloadList();
+    // The controls are usable while the header requests are in flight. Do not
+    // overwrite a page that was explicitly requested during that interval.
+    if (!listRequested) list.renderIdle();
   }
 
   async function reloadCategories() {
@@ -128,10 +136,16 @@ export function createAppController() {
     }
   }
 
+  /** @implements SPEC-UI-LAZY-LIST */
+  async function refreshListIfRequested() {
+    if (!listRequested) return;
+    await reloadList();
+  }
+
   async function selectCard(id) {
     const loaded = await showCard(id);
     if (loaded) status.info(`Loaded card ${id}`);
-    await reloadList();
+    await refreshListIfRequested();
   }
 
   /**
@@ -234,7 +248,7 @@ export function createAppController() {
     // showCard (not selectCard) so the outcome reported above survives:
     // selectCard would overwrite it with its own "Loaded card" message.
     await showCard(created.id);
-    await Promise.all([reloadStats(), reloadList()]);
+    await Promise.all([reloadStats(), refreshListIfRequested()]);
   }
 
   async function submitCategory(name, description) {
@@ -253,7 +267,7 @@ export function createAppController() {
   }
 
   async function refreshAfterWrite(id) {
-    await Promise.all([reloadStats(), reloadList()]);
+    await Promise.all([reloadStats(), refreshListIfRequested()]);
     await showCard(id);
   }
 

@@ -200,6 +200,10 @@ status: draft (2026-07-30 neco 方針決定の反映)
 - 機能:
   - 一覧: 象限・カテゴリー・タグ・全文 (`q`) フィルタ、作成日/confidence ソート、
     supersede 済み / retire 済みの表示切替 (独立した 2 トグル)
+  - **SPEC-UI-LAZY-LIST: 初回表示ではカードを取得しない** (neco 指示 2026-08-09)。ヘッダの件数
+    (`/api/clone/stats`) とカテゴリーだけを読み、一覧は「Apply を押すと読む」旨の
+    案内を出す。カードの取得は Apply 以降のみ。書き込みや選択の後の再読込も、
+    一度でも Apply された後だけ行う (無言で一覧を読み始めない)。
   - 詳細: カード本文・sourceRef・supersede チェーンの表示
   - 編集: situation/judgment/rationale/tags/category の修正 (PATCH 経由)
   - 象限変更: visibility/domain の変更 (昇格時は二重チェック再実行 — §2)
