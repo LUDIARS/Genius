@@ -276,9 +276,22 @@ T8 時点では「単純に非活性化」を supersede の 3 操作 (既存カ�
 
 - Timer Delegation の実登録: 日次 Tier 1 (`ingest`) + 夜間 Tier 2 (全量)。
   完了条件は run polling で `completed` / `completed-with-errors`。
-- Excubitor catalog (`excubitor.catalog.yaml`) の見直し。現状は `autostart: false`
-  で、`restart_policy` キー自体が未設定 (= Excubitor 既定に委ねている) ため、
-  落ちたら止まったまま。**要 neco 承認** — 共有インフラ lifecycle は自己判断しない。
+- Excubitor catalog (`excubitor.catalog.yaml`) の見直し。**要 neco 承認** —
+  共有インフラ lifecycle は自己判断しない。
+  - 変更内容: `autostart: false` → `true`、`restart_policy: on-failure` を明示
+    (従来はキー自体が未設定 = Excubitor 既定に委ねており、落ちたら止まったまま)。
+  - 根拠: 日次 ingest は CLI から loopback の `POST /api/clone/ingest/run` を
+    叩くため、サービスが落ちていると取り込みが起動しない。
+  - 未確認事項 (承認時に Excubitor 側の正本で確認する):
+    - `restart_policy` の値語彙。`on-failure` が `ServiceSchema` の enum に
+      含まれるか。Genius 側 CI は catalog fragment を検証しないため、不正値・
+      未知キーは Excubitor の読み込み時まで発覚しない (fragment ごと reject
+      されると Genius が catalog から消え、意図と逆になる)。
+    - 再起動のバックオフ有無。`npm run start` は `node dist/server.js` なので、
+      `dist/` 未ビルドや `genius.config.json` 欠損の host では起動即失敗し、
+      バックオフが無いと再起動ループになる。
+  - この変更は run 単位の失敗を検知しない (プロセスは生きたまま失敗し得る)。
+    そちらは §4 の通知 + `completed-with-errors` が担当で、代替にはならない。
 - 未マージ PR のマージ判断: frontmatter fix (ingest 失敗の一因の可能性)。
   蒸留プロンプト calibration docs は 4dfc4cd で main に入っているため対象外。
   PR 番号は GitHub 側で要確認 (本 spec 執筆時の番号は当てにしない)。

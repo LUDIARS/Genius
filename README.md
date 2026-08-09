@@ -429,7 +429,10 @@ query が失敗した場合は fail-fast します。
 
 1. 1024 次元を返すローカル model を Ollama へ pull する。
 2. SQLite backup を取得する。
-3. Excubitor または人間が Genius サービスを停止する。
+3. Excubitor または人間が Genius サービスを停止する。catalog は
+   `autostart: true` / `restart_policy: on-failure` なので、プロセスを直接
+   kill すると異常終了とみなされて再起動され得ます。停止は Excubitor 経由で
+   行い、作業中サービスが上がっていないことを確認してください。
 4. `node dist/cli.js reembed --model <new-local-model>` を実行する。
 5. サービスを再起動し、`/healthz` と代表 query を確認する。
 
@@ -446,7 +449,9 @@ cursor と run 履歴を含む SQLite 全体を backup します。
 - `genius.config.json` は個人パスを含むため、repository 外のアクセス制御された場所へ
   別途 backup します。
 - raw copy/restore を行う場合は、Excubitor または人間がサービスを停止してから DB、WAL、SHM
-  を一組として扱います。restore 後は migration、`/healthz`、代表 query を確認します。
+  を一組として扱います。停止は Excubitor 経由で行います (`restart_policy: on-failure`
+  のため、プロセスを直接 kill すると再起動されて DB が再び開かれ得ます)。
+  restore 後は migration、`/healthz`、代表 query を確認します。
 
 例として、SQLite CLI がある環境では次の形で一貫した snapshot を取得できます。実行前に
 保存先ディレクトリを作り、ファイル名を日時付きに変更してください。
