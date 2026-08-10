@@ -16,9 +16,12 @@ retrieval-conditioned judgment (擬似 FT) を採用します。
 - 埋め込みは全象限ともローカル Ollama のみです。外部 embedding URL は設定時に拒否します。
 - 待ち受け先は `server.bindHost` (既定 `127.0.0.1`) です。Genius 自身は認証を持たない
   ため、`0.0.0.0` を指定して公開する場合は、**前段でアクセス制御が済んでいること**が
-  前提になります (Cloudflare Tunnel + Access 等)。公開 bind 時は起動ログに 1 行出ます。
+  前提になります (Cloudflare Tunnel + Access 等)。さらに Genius の listener へ前段を
+  迂回して直接到達できないよう、host firewall または container network で遮断してください。
+  公開 bind 時は起動ログに 1 行出ます。
 - ブラウザからのアクセスは loopback origin と `server.allowedOrigins` に**完全一致**で
   列挙した origin だけが通ります。ワイルドカードやサブドメイン一致はありません。
+  この origin guard はブラウザ経由の攻撃対策であり、認証の代わりにはなりません。
 - クライアント (MCP / hook / eval) の接続先は従来どおり loopback のみです。
 - ソースリーダは読み取り専用です。元データを移動・更新・削除しません。
 - `data/`、`logs/`、`genius.config.json` はコミットしません。公開 export は

@@ -46,6 +46,10 @@ export function createAppController() {
       void reloadList();
     },
   });
+  // Render the idle state before start() reaches its first await. Otherwise
+  // the pager is briefly enabled while categories/stats load and can fetch a
+  // page before Apply is pressed.
+  list.renderIdle();
 
   const detail = createCardDetail({ onSelect: (id) => void selectCard(id) });
   const editForm = createCardEditForm({ onSubmit: (patch) => void applyPatch(patch, "Content saved") });
@@ -96,9 +100,6 @@ export function createAppController() {
   async function start() {
     filters = filterPanel.read();
     await Promise.all([reloadCategories(), reloadStats()]);
-    // The controls are usable while the header requests are in flight. Do not
-    // overwrite a page that was explicitly requested during that interval.
-    if (!listRequested) list.renderIdle();
   }
 
   async function reloadCategories() {
@@ -142,6 +143,7 @@ export function createAppController() {
     await reloadList();
   }
 
+  /** @implements SPEC-UI-LAZY-LIST */
   async function selectCard(id) {
     const loaded = await showCard(id);
     if (loaded) status.info(`Loaded card ${id}`);
@@ -215,6 +217,7 @@ export function createAppController() {
     status.info("Fill in the replacement card, then press Create card.");
   }
 
+  /** @implements SPEC-UI-LAZY-LIST */
   async function submitNewCard(card, supersedeTargetId) {
     let created;
     try {
@@ -266,6 +269,7 @@ export function createAppController() {
     }
   }
 
+  /** @implements SPEC-UI-LAZY-LIST */
   async function refreshAfterWrite(id) {
     await Promise.all([reloadStats(), refreshListIfRequested()]);
     await showCard(id);

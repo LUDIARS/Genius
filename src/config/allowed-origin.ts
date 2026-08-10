@@ -1,5 +1,7 @@
 import { ConfigError } from "./errors.js";
 
+const HTTP_ORIGIN_SYNTAX = /^https?:\/\/[^\s/?#\\]+\/?$/i;
+
 /**
  * Validates one entry of `server.allowedOrigins` and returns it in the exact
  * form a browser sends in the `Origin` header (scheme + host + optional port,
@@ -24,11 +26,11 @@ export function normalizeAllowedOrigin(value: string, label: string): string {
   if (url.username !== "" || url.password !== "") {
     throw new ConfigError(`${label} must not contain credentials`);
   }
-  if (url.search !== "" || url.hash !== "") {
-    throw new ConfigError(`${label} must not contain a query or fragment`);
-  }
-  if (url.pathname !== "/" && url.pathname !== "") {
-    throw new ConfigError(`${label} must not contain a path`);
+  // Check the input syntax as well as the parsed URL. WHATWG URL parsing
+  // resolves encoded dot segments (for example `/%2e`) to `/`; inspecting
+  // url.pathname alone would therefore accept a value that contained a path.
+  if (!HTTP_ORIGIN_SYNTAX.test(value)) {
+    throw new ConfigError(`${label} must not contain a path, query, or fragment`);
   }
   return url.origin;
 }

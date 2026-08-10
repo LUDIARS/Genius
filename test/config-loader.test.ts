@@ -134,6 +134,10 @@ describe("loadConfig", () => {
   it("rejects an allowed origin that is not exactly an origin", () => {
     for (const origin of [
       "https://genius.example.com/ui",
+      "https://genius.example.com\\ui",
+      "https://genius.example.com/%2e",
+      "https://genius.example.com/?from=config",
+      "https://genius.example.com/#fragment",
       "https://user:pw@genius.example.com",
       "genius.example.com",
       "ftp://genius.example.com",

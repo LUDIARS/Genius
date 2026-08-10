@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { createRuntime } from "./runtime/create-runtime.js";
 import { closeServerAndRuntime } from "./runtime/shutdown-resources.js";
 
+/** @implements SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY */
 async function main(): Promise<void> {
   const runtime = await createRuntime();
   const { bindHost, allowedOrigins } = runtime.config.server;
@@ -17,7 +18,7 @@ async function main(): Promise<void> {
     + (isLoopbackBind(bindHost)
       ? "\n"
       : ` — reachable beyond this machine; access control is expected in front of Genius.`
-        + ` allowedOrigins=${allowedOrigins.length}\n`),
+        + ` Block direct listener access. allowedOrigins=${allowedOrigins.length}\n`),
   );
   let isClosing = false;
   const shutdown = (signal: string, exitCode: number): void => {
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
   });
 }
 
+/** @implements SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY */
 function isLoopbackBind(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }

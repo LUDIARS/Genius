@@ -193,8 +193,9 @@ Traceability ID: `SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY`
 - 待ち受け先は設定で決める (`server.bindHost`、既定 `127.0.0.1`)。既定のままなら
   この機で完結し、外からは届かない。`0.0.0.0` を書いた場合はすべての interface へ
   公開されるので、**Genius の前段でアクセス制御が済んでいること**が前提になる
-  (Cloudflare Tunnel 等)。公開側で待ち受ける場合、`src/server.ts` は起動時に
-  1 行明示する (無言で公開しない)。
+  (Cloudflare Tunnel 等)。Genius の listener へ前段を迂回して直接到達できる経路は
+  host firewall または container network で遮断する。公開側で待ち受ける場合、
+  `src/server.ts` は起動時に 1 行明示する (無言で公開しない)。
 - ただし「認証なしの更新系 UI をブラウザに置く」ため、ブラウザ経由の
   クロスオリジン攻撃面が新たに立つ (ユーザが開いている任意のページから
   更新 API を叩ける)。最低限の対策を実装に含める:
@@ -204,6 +205,7 @@ Traceability ID: `SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY`
   - `Origin` ヘッダがある場合は loopback origin、および
     `server.allowedOrigins` に明示された origin のみ許可する
     (`loopback-url.ts` の判定 + 完全一致リスト)。
+    これは browser-origin guard であり、`Origin` のないクライアントを認証しない。
   - `allowedOrigins` は**完全一致の列挙**であり、ワイルドカードやサブドメイン
     一致を実装しない。scheme・host・port が 1 つでも違えば別 origin として拒否する。
     設定値は origin の形 (path・クエリ・資格情報を含まない) でなければ起動時に

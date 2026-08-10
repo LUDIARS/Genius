@@ -24,7 +24,8 @@
   そもそも返さないため、`supersededBy` と同様に `retiredAt` も持たない。
 - DELETE は提供しない (supersede / retire で代替。カテゴリーも削除不可)。
 - Genius 自身は認証を持たない。待ち受け先は `server.bindHost` (既定 `127.0.0.1`)。
-  loopback 以外へ bind する場合は前段のアクセス制御を必須とする。
+  loopback 以外へ bind する場合は前段のアクセス制御を必須とし、listener への直接到達は
+  host firewall または container network で遮断する。Origin 判定は認証の代替ではない。
 
 ## 棚卸し WebUI (`/ui/`)
 
