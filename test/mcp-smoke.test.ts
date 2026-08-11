@@ -65,6 +65,15 @@ describe("Genius MCP stdio server", () => {
       for await (const chunk of request) body += chunk;
       const decoded = JSON.parse(body) as { text?: unknown };
       requestBodies.push(decoded);
+      if (request.url?.includes("/feedback")) {
+        response.writeHead(201, { "content-type": "application/json" });
+        response.end(JSON.stringify({
+          id: "feedback-1",
+          summary: { great: 0, good: 1, poor: 0, notInCase: 0 },
+          archived: false,
+        }));
+        return;
+      }
       if (decoded.text === "Trigger a safe failure") {
         response.writeHead(503, { "content-type": "text/plain" });
         response.end("sensitive backend response detail");
@@ -89,7 +98,7 @@ describe("Genius MCP stdio server", () => {
     try {
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name)).toEqual(["genius_query"]);
+      expect(listed.tools.map((tool) => tool.name)).toEqual(["genius_query", "genius_card_feedback"]);
       expect(listed.tools[0]?.description).toContain("untrusted reference data");
 
       const called = await client.callTool({
@@ -110,6 +119,17 @@ describe("Genius MCP stdio server", () => {
       const successText = (called.content as Array<{ type: string; text?: string }>)[0]?.text;
       expect(successText).toContain("UNTRUSTED REFERENCE DATA");
 
+      const feedback = await client.callTool({
+        name: "genius_card_feedback",
+        arguments: { cardId: CARD.id, rating: "good", source: "mcp-smoke" },
+      });
+      expect("isError" in feedback ? feedback.isError : undefined).not.toBe(true);
+      expect("structuredContent" in feedback ? feedback.structuredContent : undefined).toEqual({
+        id: "feedback-1",
+        summary: { great: 0, good: 1, poor: 0, notInCase: 0 },
+        archived: false,
+      });
+
       const failed = await client.callTool({
         name: "genius_query",
         arguments: { text: "Trigger a safe failure" },
@@ -121,6 +141,7 @@ describe("Genius MCP stdio server", () => {
 
       expect(requestBodies).toEqual([
         { text: "What should I choose?", domain: "work", visibility: "public", k: 8 },
+        { cardId: CARD.id, rating: "good", source: "mcp-smoke", publicOnly: true },
         { text: "Trigger a safe failure", visibility: "public" },
       ]);
 
@@ -129,7 +150,7 @@ describe("Genius MCP stdio server", () => {
         arguments: { text: "Return private context", visibility: "sensitive" },
       });
       expect("isError" in rejected ? rejected.isError : undefined).toBe(true);
-      expect(requestBodies).toHaveLength(2);
+      expect(requestBodies).toHaveLength(3);
     } finally {
       await client.close();
     }

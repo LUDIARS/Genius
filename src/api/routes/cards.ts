@@ -10,6 +10,7 @@ import {
   visibilitySchema,
 } from "../../domain/card.js";
 import { categoryNameSchema } from "../../domain/category.js";
+import { EMPTY_CARD_FEEDBACK_SUMMARY } from "../../domain/feedback.js";
 import { CardPromotionRejectedError } from "../../services/card-service.js";
 import type { ApiServices } from "../contracts.js";
 import { assertKnownCategories, parseOrThrow, readJsonOrThrow } from "../validation.js";
@@ -73,16 +74,26 @@ export function registerCardRoutes(
   app: Hono,
   cards: ApiServices["cards"],
   categories: ApiServices["categories"],
+  feedback: ApiServices["feedback"],
 ): void {
   app.get("/api/clone/cards", async (c) => {
     const input = parseOrThrow(listQuerySchema, c.req.query());
     await assertKnownCategories(categories, input.category === undefined ? [] : [input.category]);
-    return c.json({ cards: await cards.list(input) });
+    const listed = await cards.list(input);
+    const summaries = feedback.summaries(listed.map((card) => card.id));
+    return c.json({
+      cards: listed.map((card) => ({
+        ...card,
+        feedback: summaries.get(card.id) ?? EMPTY_CARD_FEEDBACK_SUMMARY,
+      })),
+    });
   });
 
   app.get("/api/clone/cards/:id", async (c) => {
     const card = await cards.get(c.req.param("id"));
-    return card ? c.json(card) : c.json({ error: "Card not found" }, 404);
+    return card
+      ? c.json({ ...card, feedback: feedback.summary(card.id) })
+      : c.json({ error: "Card not found" }, 404);
   });
 
   // Retirement history for the UI detail view (spec/feature/operations.md §5).

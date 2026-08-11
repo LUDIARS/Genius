@@ -7,6 +7,12 @@ import type {
   DistilledCard,
   ScoredCloneCard,
 } from "../domain/card.js";
+import type {
+  CardFeedbackEntry,
+  CardFeedbackSummary,
+  RecordCardFeedbackInput,
+} from "../domain/feedback.js";
+import type { RecordFeedbackResult } from "../feedback/feedback-service.js";
 import type { CardSortField, CardSortOrder } from "../cards/card-repository.js";
 import type { SupersedeChain } from "../cards/supersede-chain.js";
 import type { CardCategory, CreateCategoryInput } from "../domain/category.js";
@@ -113,5 +119,17 @@ export interface ApiServices {
   stats: {
     get(): Promise<CloneStats>;
     exportPublic(category?: string): Promise<PublicExportCard[]>;
+  };
+  /** カード評価 (spec/feature/card-feedback.md)。 */
+  feedback: {
+    record(
+      cardId: string,
+      input: RecordCardFeedbackInput,
+      options?: { publicOnly?: boolean },
+    ): RecordFeedbackResult;
+    summary(cardId: string): CardFeedbackSummary;
+    summaries(cardIds: readonly string[]): Map<string, CardFeedbackSummary>;
+    recent(cardId: string, limit?: number): CardFeedbackEntry[];
+    isArchivedByFeedback(cardId: string): boolean;
   };
 }

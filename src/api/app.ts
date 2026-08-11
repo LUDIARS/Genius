@@ -5,6 +5,7 @@ import { jsonContentTypeGuard } from "./middleware/json-content-type-guard.js";
 import { originGuard } from "./middleware/origin-guard.js";
 import { registerCardRoutes } from "./routes/cards.js";
 import { registerCategoryRoutes } from "./routes/categories.js";
+import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerHealthRoute } from "./routes/health.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerQueryRoute } from "./routes/query.js";
@@ -41,7 +42,8 @@ export function createApp(services: ApiServices, options: CreateAppOptions = {})
   registerUiRoutes(app, new StaticAssetDirectory(options.uiRoot ?? resolveUiRoot()));
   registerHealthRoute(app, services.health);
   registerQueryRoute(app, services.query, services.categories);
-  registerCardRoutes(app, services.cards, services.categories);
+  registerCardRoutes(app, services.cards, services.categories, services.feedback);
+  registerFeedbackRoutes(app, services.feedback);
   registerCategoryRoutes(app, services.categories);
   registerIngestRoutes(app, services.ingest);
   registerStatsRoutes(app, services.stats, services.categories);

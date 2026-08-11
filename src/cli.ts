@@ -10,6 +10,7 @@ import { CategoryRepository } from "./categories/category-repository.js";
 import { loadConfig, type LoadConfigOptions } from "./config/load-config.js";
 import { createDistillLlm } from "./distill/create-distill-llm.js";
 import { domainSchema, visibilitySchema } from "./domain/card.js";
+import { CARD_FEEDBACK_RATINGS, cardFeedbackRatingSchema } from "./domain/feedback.js";
 import { categoryNameSchema } from "./domain/category.js";
 import { openConfiguredDatabase } from "./db/database.js";
 import { runMigrations } from "./db/migrate.js";
@@ -54,6 +55,8 @@ export async function runCli(
       return runReembed(argv.slice(1), config, fetchImplementation, stdout);
     case "categorize":
       return runCategorize(argv.slice(1), config, stdout);
+    case "feedback":
+      return runFeedback(argv.slice(1), baseUrl, fetchImplementation, stdout);
     default:
       throw new Error(`Unknown command: ${command}\n${usage()}`);
   }
@@ -255,6 +258,46 @@ function parseCategories(raw: string): string[] {
   return [...new Set(values.map((value) => categoryNameSchema.parse(value)))];
 }
 
+/**
+ * カード評価の送信 (spec/feature/card-feedback.md §5)。
+ * loopback からの手動・スクリプト用なので `publicOnly` は立てない
+ * (sensitive カードにも評価を付けられる)。
+ */
+async function runFeedback(
+  args: readonly string[],
+  baseUrl: string,
+  fetchImplementation: typeof globalThis.fetch,
+  stdout: (text: string) => void,
+): Promise<number> {
+  const parsed = parseArgs({
+    args: [...args],
+    allowPositionals: true,
+    strict: true,
+    options: {
+      note: { type: "string" },
+      source: { type: "string" },
+      "query-id": { type: "string" },
+    },
+  });
+  if (parsed.positionals.length !== 2) {
+    throw new Error(
+      `feedback requires <cardId> and <rating> (${CARD_FEEDBACK_RATINGS.join(" | ")})`,
+    );
+  }
+  const client = new GeniusHttpClient({ baseUrl, fetch: fetchImplementation });
+  const result = await client.sendCardFeedback({
+    cardId: parsed.positionals[0]!,
+    rating: cardFeedbackRatingSchema.parse(parsed.positionals[1]),
+    ...(parsed.values.note === undefined ? {} : { note: parsed.values.note }),
+    ...(parsed.values.source === undefined ? {} : { source: parsed.values.source }),
+    ...(parsed.values["query-id"] === undefined
+      ? {}
+      : { queryId: parsed.values["query-id"] }),
+  });
+  stdout(`${JSON.stringify(result, null, 2)}\n`);
+  return 0;
+}
+
 function parseSources(raw: string): SourceName[] {
   const values = raw.split(",").map((value) => value.trim()).filter(Boolean);
   if (values.length === 0) throw new Error("--sources must contain at least one source");
@@ -284,6 +327,8 @@ function usage(): string {
     "  genius stats",
     "  genius reembed --model <name>",
     "  genius categorize --missing   # backfill categories for cards without one",
+    `  genius feedback <cardId> <${CARD_FEEDBACK_RATINGS.join("|")}>` +
+      " [--note <text>] [--source <name>] [--query-id <id>]",
     "",
   ].join("\n");
 }

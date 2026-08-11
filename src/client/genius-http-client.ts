@@ -2,6 +2,14 @@ import { normalizeLoopbackBaseUrl, resolveGeniusBaseUrl, type Environment } from
 import { loadConfig, type LoadConfigOptions } from "../config/load-config.js";
 import { ingestRunViewSchema, type IngestRunView } from "./ingest-run-contract.js";
 import {
+  cardFeedbackInputSchema,
+  cardFeedbackResultSchema,
+  type CardFeedbackInput,
+  type CardFeedbackResult,
+  type GeniusFeedbackService,
+  type SendCardFeedbackOptions,
+} from "./feedback-contract.js";
+import {
   geniusQueryBatchResultSchema,
   geniusQueryInputSchema,
   geniusQueryResultSchema,
@@ -25,7 +33,7 @@ export class GeniusHttpClientError extends Error {
   }
 }
 
-export class GeniusHttpClient implements GeniusQueryService {
+export class GeniusHttpClient implements GeniusQueryService, GeniusFeedbackService {
   readonly #baseUrl: string;
   readonly #queryUrl: URL;
   readonly #queryBatchUrl: URL;
@@ -97,6 +105,37 @@ export class GeniusHttpClient implements GeniusQueryService {
     if (!parsed.success) {
       throw new GeniusHttpClientError(
         `Genius ingest run status returned an invalid response: ${formatIssues(parsed.error.issues)}`,
+      );
+    }
+    return parsed.data;
+  }
+
+  /**
+   * カード評価の送信 (spec/feature/card-feedback.md §5)。
+   * MCP のように public しか見せていない経路は `publicOnly` を立てる
+   * (sensitive の id はサーバ側で 403)。CLI / WebUI は立てない。
+   *
+   * @implements SPEC-GENIUS-CARD-FEEDBACK-HTTP
+   */
+  async sendCardFeedback(
+    input: CardFeedbackInput,
+    options: SendCardFeedbackOptions = {},
+  ): Promise<CardFeedbackResult> {
+    const body = cardFeedbackInputSchema.parse(input);
+    const url = new URL(
+      `/api/clone/cards/${encodeURIComponent(body.cardId)}/feedback`,
+      this.#baseUrl,
+    );
+    const response = await this.#post(url, {
+      ...body,
+      ...(options.publicOnly === true ? { publicOnly: true } : {}),
+    });
+    const parsed = cardFeedbackResultSchema.safeParse(
+      await this.#readJson(response, "Genius card feedback"),
+    );
+    if (!parsed.success) {
+      throw new GeniusHttpClientError(
+        `Genius card feedback returned an invalid response: ${formatIssues(parsed.error.issues)}`,
       );
     }
     return parsed.data;

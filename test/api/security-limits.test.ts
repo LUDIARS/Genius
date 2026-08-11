@@ -7,6 +7,7 @@ import {
   MAX_CARD_TAG_LENGTH,
   MAX_CARD_TEXT_LENGTH,
 } from "../../src/domain/card.js";
+import { MAX_FEEDBACK_NOTE_LENGTH } from "../../src/domain/feedback.js";
 
 const services: ApiServices = {
   health: { async get() { return { ok: true, model: "test", cards: 0, ollama: true }; } },
@@ -50,6 +51,13 @@ const services: ApiServices = {
       };
     },
     async exportPublic() { return []; },
+  },
+  feedback: {
+    record() { throw new Error("feedback must not run for rejected input"); },
+    summary() { throw new Error("feedback must not run for rejected input"); },
+    summaries() { return new Map(); },
+    recent() { return []; },
+    isArchivedByFeedback() { return false; },
   },
 };
 
@@ -98,5 +106,24 @@ describe("card and HTTP resource limits", () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  it("returns 400 for oversized feedback and for a false public-only marker", async () => {
+    const oversized = await createApp(services).request("/api/clone/cards/card-1/feedback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rating: "good", note: "x".repeat(MAX_FEEDBACK_NOTE_LENGTH + 1) }),
+    });
+    const falseRestriction = await createApp(services).request(
+      "/api/clone/cards/card-1/feedback",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rating: "good", publicOnly: false }),
+      },
+    );
+
+    expect(oversized.status).toBe(400);
+    expect(falseRestriction.status).toBe(400);
   });
 });

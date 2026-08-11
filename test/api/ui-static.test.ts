@@ -51,6 +51,13 @@ const services: ApiServices = {
     },
     async exportPublic() { return []; },
   },
+  feedback: {
+    record() { throw new Error("feedback must not run for a rejected request"); },
+    summary() { throw new Error("feedback must not run for a rejected request"); },
+    summaries() { return new Map(); },
+    recent() { return []; },
+    isArchivedByFeedback() { return false; },
+  },
 };
 
 const CARD_BODY = JSON.stringify({

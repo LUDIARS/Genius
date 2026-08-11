@@ -5,8 +5,9 @@ import { createGeniusHttpClientFromEnvironment } from "../client/genius-http-cli
 import { createGeniusMcpServer } from "./create-server.js";
 
 export async function runGeniusMcpServer(): Promise<void> {
-  const queryClient = createGeniusHttpClientFromEnvironment();
-  const server = createGeniusMcpServer(queryClient);
+  // 同じ HTTP client が query と feedback の両方を満たす (別接続を作らない)。
+  const client = createGeniusHttpClientFromEnvironment();
+  const server = createGeniusMcpServer(client, client);
   await server.connect(new StdioServerTransport());
 }
 

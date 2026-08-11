@@ -12,6 +12,8 @@
 | GET | `/api/clone/cards/:id/supersede-chain` | supersede 履歴 → `{card, supersedes: [...], supersededBy: [...]}`。`supersedes` = このカードが (推移的に) 置き換えた旧カード群 (同一カードを指す旧カードが複数あり得るため配列)、`supersededBy` = `superseded_by` を前方に辿った置換カード列。未知 ID は 404 |
 | POST | `/api/clone/cards` | 手動カード追加 (public は保存直前に共通センシティブ検査。`category?` は統制語彙、統制外は 400) |
 | PATCH | `/api/clone/cards/:id` | 本文修正 / supersede / retire / 象限・category 訂正 (訂正時は再埋め込み)。`retired: true\|false` で置換先なしの非活性化と復活 (retire 時刻はサーバの clock が打つ。クライアントに時刻を渡させないため `retiredAt` は受け付けない。retire 済みへの `retired: true` は no-op で最初の時刻を保つ)。body に `changedBy?: "ui"\|"api"\|"cli"` (既定 `api`)。象限/category/retire 変更は `clone_card_revisions` に列名のみ記録。**昇格 (sensitive→public) は `LlmPublicCardGate` を再実行し、sensitive 判定なら 409 で拒否** (無言降格しない)。降格は無条件許可 |
+| POST | `/api/clone/cards/:id/feedback` | `{rating, queryId?, source?, note?, publicOnly?: true}` → 201 + `{id, summary, archived}`。rating は4値のみ。`publicOnly: true` は sensitive カードを 403 で拒否し、`false` は 400 |
+| GET | `/api/clone/cards/:id/feedback` | `{summary, recent, archivedByFeedback}`。recent は note/source を含むため公開 export には転用しない |
 | GET | `/api/clone/categories` | カテゴリー統制語彙の一覧 → `{categories: [{name, description, createdAt}]}` |
 | POST | `/api/clone/categories` | カテゴリー追加 `{name, description}` → 201。重複は 409。DELETE は提供しない |
 | POST | `/api/clone/ingest/run` | `{sources?: string[], tier2?: boolean, budgetFiles?: number, allowMissing?: boolean, retryFailed?: boolean}` → run id (非同期実行)。`budgetFiles` は `tier2=true` の時のみ指定可・未指定は上限なし (全未読ファイル)、明示時のみ Tier 2 の読み取り上限。`retryFailed=true` は `ingest_failures` の未解決文書だけをカーソル無関係に再処理する (`budgetFiles` と併用不可) |
@@ -19,6 +21,8 @@
 | GET | `/api/clone/stats` | 象限別カード数 / tier 別 / 最終 ingest / `superseded` / `retired` / `active` (= 活性カード数) / `total` / `unresolvedIngestFailures` (全ソースの未解決失敗件数) |
 | GET | `/api/clone/export` | `?visibility=public[&category=]` — **活性**な public カードの JSON export (supersede 済みと retire 済みは含めない。datahub push 用素材で push 自体はスコープ外。category は統制語彙、統制外は 400) |
 
+- カード DTO (一覧・詳細) は rating 別の `feedback` 集計を含む。一覧は1本の
+  grouped query で集計し、note/source は含めない。
 - カード DTO (一覧・詳細・query 結果) は `supersededBy` と `retiredAt`
   (epoch ms / `null`) を含む。公開 export DTO は retire 済み・supersede 済みを
   そもそも返さないため、`supersededBy` と同様に `retiredAt` も持たない。
@@ -71,6 +75,7 @@ genius ingest [--sources memory,review] [--tier2 [--budget-files 500]] [--allow-
 genius stats
 genius reembed --model <name>   # モデル移行バッチ
 genius categorize --missing     # category NULL のカードを安価パスで分類する backfill
+genius feedback <cardId> <great|good|poor|not-in-case> [--note <text>] [--source <name>] [--query-id <id>]
 ```
 
 `categorize --missing` は再蒸留・再 embedding を行わず、既存カード本文
@@ -83,6 +88,9 @@ tool: `genius_query { text, domain?, visibility?: "public", categories?, k? }`�
 機微情報混入を防ぐため public 固定で、`sourceRef`・内部 ID・時刻を除く安全 DTO を返す。
 `categories` は統制語彙の OR フィルタ (セッションの LLM が自タスクのカテゴリーを渡す —
 spec/feature/operations.md §1.3)。
+
+tool: `genius_card_feedback { cardId, rating, queryId?, source?, note? }`。MCP からは public
+カードだけを評価でき、HTTP 転送時に `publicOnly: true` を必ず付ける。
 
 ## Harness hook (`hooks/genius-supply.mjs`)
 
@@ -122,6 +130,10 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
     "concordiaBaseUrl": null    // 失敗 run (failed / completed-with-errors) の通知先
                                  // Concordia base URL。loopback のみ許可。
                                  // null = 通知無効 (起動時に 1 行明示)
+  },
+  "feedback": {
+    "minimumPoor": 3,
+    "poorRatio": 0.6
   },
   "sources": {
     "memoryDir": null,          // 例 C:/Users/<user>/.claude/projects/<proj>/memory

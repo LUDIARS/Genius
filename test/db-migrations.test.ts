@@ -45,6 +45,7 @@ describe("database migrations", () => {
         "questions",
         "question_targets",
         "question_answers",
+        "card_feedback",
       ]),
     );
     const indexes = database
@@ -67,6 +68,7 @@ describe("database migrations", () => {
         "idx_question_targets_dedupe",
         "idx_question_answers_question_id",
         "idx_embedding_meta_one_active",
+        "idx_card_feedback_card",
       ]),
     );
     const cardColumns = database
@@ -75,6 +77,8 @@ describe("database migrations", () => {
       .map((column) => column.name);
     expect(cardColumns).toContain("category");
     expect(cardColumns).toContain("retired_at");
+    expect(cardColumns).toContain("retired_reason");
+    expect(cardColumns).toContain("feedback_reset_at");
     const cacheColumns = database
       .prepare<[], { name: string }>("PRAGMA table_info('embedding_cache')")
       .all()

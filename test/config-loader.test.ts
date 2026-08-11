@@ -199,7 +199,7 @@ describe("loadConfig", () => {
     expect(enabled.notify.concordiaBaseUrl).toBe("http://127.0.0.1:14500");
   });
 
-  it("defaults the questions / contradiction / queryLog sections when absent", () => {
+  it("defaults the questions / contradiction / queryLog / feedback sections when absent", () => {
     const config = loadConfig({
       configPath: writeConfig(fixtureDirectory()),
       environment: {},
@@ -217,9 +217,10 @@ describe("loadConfig", () => {
       judgmentSimilarityMax: 0.5,
     });
     expect(config.queryLog).toEqual({ enabled: true, retentionDays: 30 });
+    expect(config.feedback).toEqual({ minimumPoor: 3, poorRatio: 0.6 });
   });
 
-  it("rejects invalid questions / queryLog values instead of falling back", () => {
+  it("rejects invalid questions / queryLog / feedback values instead of falling back", () => {
     const directory = fixtureDirectory();
     const config = validConfig();
     config.questions = { maxPerRun: 0 };
@@ -232,6 +233,15 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({
         configPath: writeConfig(fixtureDirectory(), other),
+        environment: {},
+      }),
+    ).toThrowError(/Invalid config/);
+
+    const invalidFeedback = validConfig();
+    invalidFeedback.feedback = { minimumPoor: 0, poorRatio: 1.1 };
+    expect(() =>
+      loadConfig({
+        configPath: writeConfig(fixtureDirectory(), invalidFeedback),
         environment: {},
       }),
     ).toThrowError(/Invalid config/);

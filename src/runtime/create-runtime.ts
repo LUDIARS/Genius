@@ -23,6 +23,8 @@ import { IngestService } from "../ingest/ingest-service.js";
 import { JsonlIngestLogger } from "../ingest/jsonl-ingest-logger.js";
 import { SqliteIngestFailureStore } from "../ingest/sqlite-ingest-failure-store.js";
 import { SqliteIngestRunStore, SqliteIngestStateStore } from "../ingest/sqlite-ingest-stores.js";
+import { CardFeedbackRepository } from "../feedback/feedback-repository.js";
+import { CardFeedbackService } from "../feedback/feedback-service.js";
 import { createQueryLogStore } from "../query/create-query-log-store.js";
 import { QueryService } from "../query/query-service.js";
 import { ContradictionDetector } from "../questions/contradiction-detector.js";
@@ -136,6 +138,15 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       state: new SqliteIngestStateStore(database),
     });
     const stats = new StatsRepository(database);
+    // 評価は CardService ではなく CardRepository を直接見る。判定に要るのは
+    // 埋め込み再計算を伴わない retire 状態の読み書きだけで、CardService 経由に
+    // すると 1 件の評価ごとに再埋め込み判定が走る (spec/feature/card-feedback.md §4)。
+    const feedback = new CardFeedbackService({
+      database,
+      cards: cardsRepository,
+      feedback: new CardFeedbackRepository(database),
+      thresholds: config.feedback,
+    });
     const services: ApiServices = {
       health: new HealthService(cards, embedder),
       query,
@@ -143,6 +154,7 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       categories: categoryRepository,
       ingest,
       stats,
+      feedback,
     };
     let closePromise: Promise<void> | null = null;
     return {

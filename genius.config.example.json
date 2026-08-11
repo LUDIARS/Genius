@@ -37,6 +37,10 @@
     "enabled": true,
     "retentionDays": 30
   },
+  "feedback": {
+    "minimumPoor": 3,
+    "poorRatio": 0.6
+  },
   "sources": {
     "memoryDir": null,
     "sessionLogsDir": null,

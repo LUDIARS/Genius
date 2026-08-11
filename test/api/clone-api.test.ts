@@ -12,6 +12,8 @@ import { runMigrations } from "../../src/db/migrate.js";
 import type { DistilledCard } from "../../src/domain/card.js";
 import type { PublicCardGate } from "../../src/distill/public-card-gate.js";
 import type { EmbeddingClient } from "../../src/embedding/types.js";
+import { CardFeedbackRepository } from "../../src/feedback/feedback-repository.js";
+import { CardFeedbackService } from "../../src/feedback/feedback-service.js";
 import { VectorStore } from "../../src/embedding/vector-store.js";
 import type { IngestOptions, IngestRunRecord } from "../../src/ingest/ingest-contracts.js";
 import { IngestValidationError } from "../../src/ingest/ingest-service.js";
@@ -102,6 +104,11 @@ describe("clone API", () => {
         unresolvedFailures: () => 0,
       },
       stats,
+      feedback: new CardFeedbackService({
+        database,
+        cards: repository,
+        feedback: new CardFeedbackRepository(database),
+      }),
     };
   });
 
@@ -746,6 +753,102 @@ describe("clone API", () => {
     );
     expect(leaf.supersededBy).toEqual([]);
     expect((await app.request("/api/clone/cards/does-not-exist/supersede-chain")).status).toBe(404);
+  });
+
+  describe("card feedback", () => {
+    async function postFeedback(cardId: string, body: unknown): Promise<Response> {
+      return createApp(services).request(
+        `/api/clone/cards/${encodeURIComponent(cardId)}/feedback`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+    }
+
+    it("records a rating and returns the running summary", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:feedback-1");
+
+      const response = await postFeedback(card.id, { rating: "great", source: "test" });
+
+      expect(response.status).toBe(201);
+      const body = (await response.json()) as { summary: { great: number }; archived: boolean };
+      expect(body.summary.great).toBe(1);
+      expect(body.archived).toBe(false);
+
+      const detail = (await (await createApp(services).request(
+        `/api/clone/cards/${encodeURIComponent(card.id)}`,
+      )).json()) as { feedback: { great: number } };
+      expect(detail.feedback.great).toBe(1);
+
+      const listed = (await (await createApp(services).request(
+        "/api/clone/cards?includeRetired=true",
+      )).json()) as { cards: Array<{ id: string; feedback: { great: number } }> };
+      expect(listed.cards.find((listedCard) => listedCard.id === card.id)?.feedback.great).toBe(1);
+
+      const history = (await (await createApp(services).request(
+        `/api/clone/cards/${encodeURIComponent(card.id)}/feedback`,
+      )).json()) as { archivedByFeedback: boolean };
+      expect(history.archivedByFeedback).toBe(false);
+    });
+
+    it("rejects a rating outside the controlled vocabulary", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:feedback-2");
+
+      const response = await postFeedback(card.id, { rating: "terrible" });
+
+      expect(response.status).toBe(400);
+    });
+
+    it("404s for an unknown card instead of recording an orphan rating", async () => {
+      expect((await postFeedback("missing", { rating: "poor" })).status).toBe(404);
+    });
+
+    it("archives a card whose poor ratings pass the threshold and drops it from query", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:feedback-3");
+      await postFeedback(card.id, { rating: "poor" });
+      await postFeedback(card.id, { rating: "poor" });
+      const third = await postFeedback(card.id, { rating: "poor" });
+
+      expect(((await third.json()) as { archived: boolean }).archived).toBe(true);
+
+      const history = (await (await createApp(services).request(
+        `/api/clone/cards/${encodeURIComponent(card.id)}/feedback`,
+      )).json()) as { archivedByFeedback: boolean };
+      expect(history.archivedByFeedback).toBe(true);
+
+      const queried = await createApp(services).request("/api/clone/query", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "alpha", k: 8 }),
+      });
+      const cardsFound = ((await queried.json()) as { cards: { id: string }[] }).cards;
+      expect(cardsFound.map((found) => found.id)).not.toContain(card.id);
+    });
+
+    it("refuses a public-only caller that sends a sensitive card id", async () => {
+      const card = await createCard("work", "sensitive", "alpha", "fixture:feedback-4");
+
+      const response = await postFeedback(card.id, { rating: "poor", publicOnly: true });
+
+      expect(response.status).toBe(403);
+    });
+
+    it("keeps the free-text note out of the public export", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:feedback-5");
+      await postFeedback(card.id, { rating: "poor", note: "secret-note-marker" });
+
+      const exported = await createApp(services).request("/api/clone/export");
+      const listed = await createApp(services).request("/api/clone/cards");
+      const detail = await createApp(services).request(
+        `/api/clone/cards/${encodeURIComponent(card.id)}`,
+      );
+
+      expect(await exported.text()).not.toContain("secret-note-marker");
+      expect(await listed.text()).not.toContain("secret-note-marker");
+      expect(await detail.text()).not.toContain("secret-note-marker");
+    });
   });
 
   /** Assigns strictly increasing created_at values in the given card order. */

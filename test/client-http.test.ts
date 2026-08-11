@@ -167,6 +167,35 @@ describe("GeniusHttpClient", () => {
 
     await expect(client.query({ text: "query" })).rejects.toThrow(/invalid response/i);
   });
+
+  it("sends validated feedback with an encoded card id and public-only restriction", async () => {
+    const fetchImplementation = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({
+          id: "feedback-1",
+          summary: { great: 0, good: 1, poor: 0, notInCase: 0 },
+          archived: false,
+        })),
+    );
+    const client = new GeniusHttpClient({
+      baseUrl: "http://127.0.0.1:4230",
+      fetch: fetchImplementation as typeof fetch,
+    });
+
+    await expect(client.sendCardFeedback(
+      { cardId: "card/one", rating: "good", note: " useful " },
+      { publicOnly: true },
+    )).resolves.toMatchObject({ id: "feedback-1", archived: false });
+    const [url, init] = fetchImplementation.mock.calls[0] ?? [];
+    expect(String(url)).toBe("http://127.0.0.1:4230/api/clone/cards/card%2Fone/feedback");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        cardId: "card/one",
+        rating: "good",
+      note: "useful",
+      publicOnly: true,
+    });
+    expect(init?.redirect).toBe("error");
+  });
 });
 
 describe("ingest run status predicates", () => {

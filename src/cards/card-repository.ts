@@ -200,6 +200,71 @@ export class CardRepository {
     if (result.changes !== 1) throw new Error(`Card not found: ${normalized.id}`);
   }
 
+  /**
+   * 評価によるアーカイブ (spec/feature/card-feedback.md §4)。
+   *
+   * 既存の retire 機構をそのまま使い、由来だけ `retired_reason` に残す。
+   * 既に retire 済みなら何もしない (人が落とした時刻を評価が上書きしない)。
+   * 落とせたときだけ true。
+   *
+   * @implements SPEC-GENIUS-CARD-FEEDBACK-ARCHIVE
+   */
+  public archiveByFeedback(id: string): boolean {
+    const now = this.#clock();
+    return (
+      this.#database
+        .prepare(
+          `UPDATE clone_cards
+              SET retired_at = ?, retired_reason = 'feedback', updated_at = ?
+            WHERE id = ? AND retired_at IS NULL`,
+        )
+        .run(now, now, id).changes === 1
+    );
+  }
+
+  /**
+   * 再アーカイブ抑止の基準時刻 (§4)。これより新しい評価だけがアーカイブ判定に入る。
+   * `null` = 一度も戻していないので全期間が対象。
+   */
+  public feedbackResetAt(id: string): number | null {
+    const row = this.#database
+      .prepare<[string], { feedback_reset_at: number | null }>(
+        "SELECT feedback_reset_at FROM clone_cards WHERE id = ?",
+      )
+      .get(id);
+    return row === undefined ? null : row.feedback_reset_at;
+  }
+
+  /** 評価による retire が現在も有効か。UI は手動 retire と区別して表示する。 */
+  public isArchivedByFeedback(id: string): boolean {
+    const row = this.#database
+      .prepare<[string], { archived: 0 | 1 }>(
+        `SELECT (retired_at IS NOT NULL AND retired_reason = 'feedback') AS archived
+           FROM clone_cards WHERE id = ?`,
+      )
+      .get(id);
+    return row?.archived === 1;
+  }
+
+  /**
+   * 人が un-retire したときに呼ぶ。由来を消し、基準時刻を今にして、それ以前の
+   * poor だけで即座に落とし直されないようにする。
+   */
+  public clearFeedbackArchive(id: string): void {
+    const resetAt = this.#clock();
+    this.#database
+      .prepare(
+        `UPDATE clone_cards
+            SET retired_reason = NULL,
+                feedback_reset_at = MAX(
+                  ?,
+                  COALESCE((SELECT MAX(created_at) FROM card_feedback WHERE card_id = ?), 0)
+                )
+          WHERE id = ?`,
+      )
+      .run(resetAt, id, id);
+  }
+
   public getById(id: string): CloneCard | null {
     const row = this.#database
       .prepare<[string], CloneCardRow>(

@@ -83,3 +83,17 @@ export function createCategory(name, description) {
 export function getStats() {
   return request(`${API_BASE}/stats`);
 }
+
+/** @implements SPEC-GENIUS-CARD-FEEDBACK-HTTP */
+export function getCardFeedback(id) {
+  return request(`${API_BASE}/cards/${encodeURIComponent(id)}/feedback`);
+}
+
+/** @implements SPEC-GENIUS-CARD-FEEDBACK-HTTP */
+export function sendCardFeedback(id, rating, note) {
+  return writeRequest(`${API_BASE}/cards/${encodeURIComponent(id)}/feedback`, "POST", {
+    rating,
+    source: "ui",
+    ...(note ? { note } : {}),
+  });
+}

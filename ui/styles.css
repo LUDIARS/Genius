@@ -308,3 +308,41 @@ textarea {
 .hidden {
   display: none;
 }
+
+/* Card feedback (spec/feature/card-feedback.md §5) */
+.feedback-buttons {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.feedback-note {
+  width: 100%;
+  margin-top: 0.4rem;
+}
+
+.feedback-status {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.feedback-history {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.feedback-entry {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.feedback-entry-note {
+  flex-basis: 100%;
+  color: inherit;
+  opacity: 0.85;
+}

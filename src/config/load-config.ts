@@ -114,6 +114,16 @@ const configSchema = z
       .strict()
       .optional()
       .default({ enabled: true, retentionDays: 30 }),
+    // カード評価によるアーカイブの閾値 (spec/feature/card-feedback.md §4)。
+    // 節が無い既存 config は既定値で動く。
+    feedback: z
+      .object({
+        minimumPoor: z.number().int().min(1).default(3),
+        poorRatio: z.number().gt(0).max(1).default(0.6),
+      })
+      .strict()
+      .optional()
+      .default({ minimumPoor: 3, poorRatio: 0.6 }),
   })
   .strict();
 

@@ -105,6 +105,15 @@ export interface GeniusConfig {
   questions: QuestionsConfig;
   contradiction: ContradictionConfig;
   queryLog: QueryLogConfig;
+  feedback: FeedbackConfig;
+}
+
+/** 評価によるアーカイブの閾値 (spec/feature/card-feedback.md §4)。 */
+export interface FeedbackConfig {
+  /** これ未満の poor 件数では落とさない。 */
+  minimumPoor: number;
+  /** poor / (great + good + poor) がこの値以上なら落とす。 */
+  poorRatio: number;
 }
 
 export interface LoadedGeniusConfig extends GeniusConfig {

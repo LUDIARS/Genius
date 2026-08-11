@@ -185,8 +185,13 @@ export class CardService {
     const changedFields = changedCardColumns(current, updated);
     const shouldRecordRevision = REVISION_TRACKED_COLUMNS.some((column) =>
       changedFields.includes(column));
+    // 人が retire を解除したら、評価によるアーカイブの状態も一緒に解く。
+    // ここで基準時刻を進めておかないと、解除前に積まれた poor だけで次の 1 件が
+    // 届いた瞬間に落とし直される (spec/feature/card-feedback.md §4)。
+    const reactivated = current.retiredAt !== null && updated.retiredAt === null;
     this.#database.transaction(() => {
       this.#cards.save(updated);
+      if (reactivated) this.#cards.clearFeedbackArchive(id);
       if (vector) this.#vectors.upsert(updated.id, vector);
       if (shouldRecordRevision) this.#revisions.record(id, changedFields, changedBy);
     })();

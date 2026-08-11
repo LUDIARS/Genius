@@ -1,6 +1,7 @@
 import * as api from "./api-client.js";
 import { createCardCreateForm } from "./card-create-form.js";
 import { createCardDetail } from "./card-detail.js";
+import { createFeedbackPanel } from "./feedback-panel.js";
 import { createCardEditForm } from "./card-edit-form.js";
 import { createCardList } from "./card-list.js";
 import { createCategoryPanel } from "./category-panel.js";
@@ -65,6 +66,10 @@ export function createAppController() {
     onRetire: () => void applyPatch({ retired: true }, "Card retired"),
     onReactivate: () => void applyPatch({ retired: false }, "Card un-retired"),
   });
+  const feedbackPanel = createFeedbackPanel({
+    onSend: (rating, note) => sendFeedback(rating, note),
+  });
+  feedbackPanel.renderEmpty();
   const createForm = createCardCreateForm({
     onSubmit: (card, supersedeTargetId) => void submitNewCard(card, supersedeTargetId),
   });
@@ -89,6 +94,7 @@ export function createAppController() {
       el("div", { className: "column left" }, [filterPanel.element, list.element]),
       el("div", { className: "column right" }, [
         detail.element,
+        feedbackPanel.element,
         editors,
         createForm.element,
         categoryPanel.element,
@@ -153,13 +159,20 @@ export function createAppController() {
   /**
    * Reads the card plus its chain and fills the detail view and every editor
    * from the stored state. Returns false (and reports) when the read fails.
+   *
+   * @implements SPEC-GENIUS-CARD-FEEDBACK-UI
    */
   async function showCard(id) {
     try {
-      const [card, chain] = await Promise.all([api.getCard(id), api.getSupersedeChain(id)]);
+      const [card, chain, feedback] = await Promise.all([
+        api.getCard(id),
+        api.getSupersedeChain(id),
+        api.getCardFeedback(id),
+      ]);
       currentCard = card;
       selectedId = card.id;
       detail.render(card, chain);
+      feedbackPanel.render(feedback);
       editForm.setCard(card);
       quadrantForm.setCard(card);
       supersedeForm.setCard(card);
@@ -170,6 +183,28 @@ export function createAppController() {
       status.failure(`Failed to load card ${id}`, error);
       return false;
     }
+  }
+
+  /**
+   * 評価を送り、集計と (アーカイブされたなら) カード状態を取り直す。
+   * poor が閾値を超えると送信そのものでカードが retire されるので、
+   * 送りっぱなしにせず表示を更新する (spec/feature/card-feedback.md §4)。
+   */
+  async function sendFeedback(rating, note) {
+    if (selectedId === null) {
+      status.error("Select a card first.");
+      return;
+    }
+    const id = selectedId;
+    const result = await api.sendCardFeedback(id, rating, note);
+    if (result.archived) {
+      status.info(`Card ${id} was archived: poor feedback passed the threshold.`);
+      await showCard(id);
+      await refreshListIfRequested();
+      return;
+    }
+    status.info(`Feedback recorded: ${rating}`);
+    feedbackPanel.render(await api.getCardFeedback(id));
   }
 
   async function applyPatch(patch, successMessage) {
