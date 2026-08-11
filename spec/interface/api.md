@@ -4,7 +4,8 @@
 
 | Method | Path | 説明 |
 |---|---|---|
-| GET | `/healthz` | `{ok, model, cards, ollama}` (Ollama 死活も返す) |
+| GET | `/healthz` | `{ok:true}` — フロントワーカーの生存のみ。依存を見ない (operations.md §9) |
+| GET | `/readyz` | `{ok, model, cards, ollama}` — 依存込みの準備状態。依存不可なら 503 |
 | POST | `/api/clone/query` | `{text, domain?, visibility?, categories?, k?=8}` → `{cards:[{...card, score}], tookMs}` (`categories` は統制語彙の OR フィルタ。統制外の値は 400) |
 | POST | `/api/clone/query-batch` | `{queries: [{text, domain?, visibility?, categories?, k?=8}, ...]}` → `{results: [{cards, tookMs}, ...]}` (1〜N クエリを 1 回の embed 呼び出しに集約。p95 改善策、上限50件) |
 | GET | `/api/clone/cards` | 一覧。`?domain=&visibility=&category=&tag=&q=&limit=&offset=&sort=&order=&includeSuperseded=&includeRetired=` (q は LIKE。category は統制語彙、統制外は 400。`sort=createdAt\|confidence` 既定 `createdAt`、`order=asc\|desc` 既定 `desc`、`includeSuperseded` / `includeRetired` は `true\|false` 既定 `false` で**独立**に効く。統制外の sort/order/真偽値は 400) |
@@ -134,6 +135,10 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
   "feedback": {
     "minimumPoor": 3,
     "poorRatio": 0.6
+  },
+  "cardGroupCache": {
+    "hotThreshold": 2,        // 同じ一覧条件を保存し始める参照回数
+    "maxEntries": 64          // 保存結果と参照回数それぞれの LRU 上限
   },
   "sources": {
     "memoryDir": null,          // 例 C:/Users/<user>/.claude/projects/<proj>/memory

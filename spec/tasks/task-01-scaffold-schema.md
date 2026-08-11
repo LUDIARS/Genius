@@ -13,7 +13,7 @@ status: done
 - config loader: `genius.config.json` → 無ければ example 検出時に
   コピー手順つき起動エラー。env override (`GENIUS_PORT` 等)。null ソースの
   扱いは `spec/interface/api.md` どおり。
-- `/healthz` (Ollama 死活込み)。
+- `/healthz` (フロントワーカーの生存) と `/readyz` (Ollama / DB の準備状態)。
 
 ## Done 条件 (機械判定)
 

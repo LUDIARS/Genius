@@ -106,6 +106,7 @@ export interface GeniusConfig {
   contradiction: ContradictionConfig;
   queryLog: QueryLogConfig;
   feedback: FeedbackConfig;
+  cardGroupCache: CardGroupCacheConfig;
 }
 
 /** 評価によるアーカイブの閾値 (spec/feature/card-feedback.md §4)。 */
@@ -114,6 +115,14 @@ export interface FeedbackConfig {
   minimumPoor: number;
   /** poor / (great + good + poor) がこの値以上なら落とす。 */
   poorRatio: number;
+}
+
+/** 頻出カードグループのキャッシュ (spec/feature/operations.md §10)。 */
+export interface CardGroupCacheConfig {
+  /** この回数だけ引かれた絞り込みを「頻出」とみなして保存する。 */
+  hotThreshold: number;
+  /** 保存結果と頻度記録の上限 (超過分は最後に使われたものから捨てる)。 */
+  maxEntries: number;
 }
 
 export interface LoadedGeniusConfig extends GeniusConfig {

@@ -1,6 +1,8 @@
 import { ulid } from "ulid";
 import type { ListCardsInput, ManualCardInput } from "../api/contracts.js";
 import { CardRepository } from "../cards/card-repository.js";
+import { CardGroupCache } from "../cards/card-group-cache.js";
+import { cardGroupKey } from "../cards/card-group-key.js";
 import {
   CardRevisionRepository,
   type CardRevision,
@@ -45,6 +47,7 @@ export class CardService {
   readonly #revisions: CardRevisionRepository;
   readonly #vectors: VectorStore;
   readonly #publicCardGate: PublicCardGate;
+  readonly #groups: CardGroupCache;
 
   constructor(
     database: GeniusDatabase,
@@ -52,6 +55,7 @@ export class CardService {
     embedder: EmbeddingClient,
     vectors: VectorStore,
     publicCardGate: PublicCardGate,
+    groups: CardGroupCache = new CardGroupCache(),
   ) {
     this.#database = database;
     this.#cards = cards;
@@ -59,10 +63,35 @@ export class CardService {
     this.#revisions = new CardRevisionRepository(database);
     this.#vectors = vectors;
     this.#publicCardGate = publicCardGate;
+    this.#groups = groups;
   }
 
+  /**
+   * カードグループの読み出し。頻出条件だけキャッシュから返す
+   * (spec/feature/operations.md §10)。キャッシュの版は repository 内の書き込みと
+   * 別 SQLite 接続からの commit の両方を含むため、どちらの更新後も miss になる。
+   *
+   * @implements SPEC-GENIUS-CARD-GROUP-CACHE
+   */
   async list(input: ListCardsInput): Promise<CloneCard[]> {
-    return this.#cards.list({
+    const key = cardGroupKey({
+      domain: input.domain,
+      visibility: input.visibility,
+      category: input.category,
+      tag: input.tag,
+      q: input.q,
+      includeSuperseded: input.includeSuperseded,
+      includeRetired: input.includeRetired,
+      limit: input.limit,
+      offset: input.offset,
+      sort: input.sort,
+      order: input.order,
+    });
+    const version = this.#cards.writeVersion();
+    const cached = this.#groups.get(key, version);
+    if (cached !== null) return cached;
+
+    const cards = this.#cards.list({
       ...(input.domain === undefined ? {} : { domain: input.domain }),
       ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
       ...(input.category === undefined ? {} : { category: input.category }),
@@ -75,6 +104,8 @@ export class CardService {
       sort: input.sort,
       order: input.order,
     });
+    this.#groups.remember(key, version, cards);
+    return cards;
   }
 
   async get(id: string): Promise<CloneCard | null> {

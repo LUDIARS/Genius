@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createApp } from "../api/app.js";
 import type { ApiServices } from "../api/contracts.js";
+import { CardGroupCache } from "../cards/card-group-cache.js";
 import { CardRepository } from "../cards/card-repository.js";
 import { CategoryRepository } from "../categories/category-repository.js";
 import { loadConfig, type LoadConfigOptions } from "../config/load-config.js";
@@ -90,7 +91,14 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
     const publicCardGate = new LlmPublicCardGate(llm);
     const cardsRepository = new CardRepository(database);
     const vectors = new VectorStore(database, activeModel.dimension);
-    const cards = new CardService(database, cardsRepository, embedder, vectors, publicCardGate);
+    const cards = new CardService(
+      database,
+      cardsRepository,
+      embedder,
+      vectors,
+      publicCardGate,
+      new CardGroupCache(config.cardGroupCache),
+    );
     const queryLog = createQueryLogStore(config.queryLog, database);
     const query = new QueryService({
       embedder,

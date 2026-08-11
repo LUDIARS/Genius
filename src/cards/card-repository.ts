@@ -20,6 +20,14 @@ export interface CardRepositoryOptions {
   clock?: () => number;
 }
 
+function dataVersion(database: GeniusDatabase): number {
+  const version = database.pragma("data_version", { simple: true });
+  if (typeof version !== "number" || !Number.isSafeInteger(version)) {
+    throw new Error("SQLite PRAGMA data_version did not return a safe integer");
+  }
+  return version;
+}
+
 /** Sortable list columns, whitelisted so no caller value reaches the SQL text. */
 const SORT_COLUMNS = {
   createdAt: "created_at",
@@ -113,11 +121,25 @@ export class CardRepository {
   readonly #database: GeniusDatabase;
   readonly #idFactory: () => string;
   readonly #clock: () => number;
+  /**
+   * この repository からの書き込み回数。外部接続の変更は SQLite data_version と
+   * 組み合わせて検知する (spec/feature/operations.md §10)。
+   */
+  #localWriteVersion = 0;
 
   public constructor(database: GeniusDatabase, options: CardRepositoryOptions = {}) {
     this.#database = database;
     this.#idFactory = options.idFactory ?? ulid;
     this.#clock = options.clock ?? Date.now;
+  }
+
+  /**
+   * 現在の書き込み版。ローカル書き込みと別 SQLite 接続からの commit の両方を含む。
+   *
+   * @implements SPEC-GENIUS-CARD-GROUP-CACHE
+   */
+  public writeVersion(): string {
+    return `${this.#localWriteVersion}:${dataVersion(this.#database)}`;
   }
 
   public prepareCreate(input: CreateCardInput): CloneCard {
@@ -167,6 +189,7 @@ export class CardRepository {
         normalized.createdAt,
         normalized.updatedAt,
       );
+    this.#localWriteVersion += 1;
   }
 
   public save(card: CloneCard): void {
@@ -198,6 +221,7 @@ export class CardRepository {
         normalized.id,
       );
     if (result.changes !== 1) throw new Error(`Card not found: ${normalized.id}`);
+    this.#localWriteVersion += 1;
   }
 
   /**
@@ -211,15 +235,17 @@ export class CardRepository {
    */
   public archiveByFeedback(id: string): boolean {
     const now = this.#clock();
-    return (
-      this.#database
-        .prepare(
-          `UPDATE clone_cards
-              SET retired_at = ?, retired_reason = 'feedback', updated_at = ?
-            WHERE id = ? AND retired_at IS NULL`,
-        )
-        .run(now, now, id).changes === 1
-    );
+    const archived = this.#database
+      .prepare(
+        `UPDATE clone_cards
+            SET retired_at = ?, retired_reason = 'feedback', updated_at = ?
+          WHERE id = ? AND retired_at IS NULL`,
+      )
+      .run(now, now, id).changes === 1;
+    // 落ちたときだけ版を進める。既に retire 済みで no-op だった場合まで進めると、
+    // 何も変わっていないのにキャッシュを捨てることになる。
+    if (archived) this.#localWriteVersion += 1;
+    return archived;
   }
 
   /**
@@ -263,6 +289,7 @@ export class CardRepository {
           WHERE id = ?`,
       )
       .run(resetAt, id, id);
+    this.#localWriteVersion += 1;
   }
 
   public getById(id: string): CloneCard | null {

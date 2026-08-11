@@ -9,7 +9,10 @@ import { resolveUiRoot } from "../../src/api/ui/ui-root.js";
 
 /** Services that answer reads with empty data; writes must never be reached. */
 const services: ApiServices = {
-  health: { async get() { return { ok: true, model: "test", cards: 0, ollama: true }; } },
+  health: {
+    get() { return { ok: true } as const; },
+    async ready() { return { ok: true, model: "test", cards: 0, ollama: true }; },
+  },
   query: {
     async query() { return { cards: [], tookMs: 0 }; },
     async queryMany(inputs) { return inputs.map(() => ({ cards: [], tookMs: 0 })); },

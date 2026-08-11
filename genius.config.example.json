@@ -41,6 +41,10 @@
     "minimumPoor": 3,
     "poorRatio": 0.6
   },
+  "cardGroupCache": {
+    "hotThreshold": 2,
+    "maxEntries": 64
+  },
   "sources": {
     "memoryDir": null,
     "sessionLogsDir": null,

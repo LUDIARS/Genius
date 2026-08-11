@@ -19,7 +19,16 @@ import type { CardCategory, CreateCategoryInput } from "../domain/category.js";
 import type { IngestOptions, IngestRunRecord } from "../ingest/ingest-contracts.js";
 import type { SourceName } from "../readers/source-reader.js";
 
+/**
+ * `/healthz` の応答。フロントワーカーが応答できている事実だけを表す。
+ * 依存 (Ollama / DB) を混ぜない — 混ぜると依存の遅延が「サービス停止」に化ける。
+ */
 export interface HealthStatus {
+  ok: true;
+}
+
+/** `/readyz` の応答。依存込みの準備状態 (呼ばれたときだけ評価する)。 */
+export interface ReadinessStatus {
   ok: boolean;
   model: string;
   cards: number;
@@ -91,7 +100,12 @@ export interface PublicExportCard {
 }
 
 export interface ApiServices {
-  health: { get(): Promise<HealthStatus> };
+  health: {
+    /** 生存確認。同期・I/O 無し。 */
+    get(): HealthStatus;
+    /** 準備確認 (依存込み)。 */
+    ready(): Promise<ReadinessStatus>;
+  };
   query: {
     query(input: QueryInput): Promise<QueryResult>;
     /** Batches embedding for several queries into a single round trip. */

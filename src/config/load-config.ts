@@ -124,6 +124,15 @@ const configSchema = z
       .strict()
       .optional()
       .default({ minimumPoor: 3, poorRatio: 0.6 }),
+    // 頻出カードグループのキャッシュ (spec/feature/operations.md §10)。
+    cardGroupCache: z
+      .object({
+        hotThreshold: z.number().int().min(1).default(2),
+        maxEntries: z.number().int().min(1).default(64),
+      })
+      .strict()
+      .optional()
+      .default({ hotThreshold: 2, maxEntries: 64 }),
   })
   .strict();
 

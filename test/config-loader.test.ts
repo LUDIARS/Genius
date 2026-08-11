@@ -199,7 +199,7 @@ describe("loadConfig", () => {
     expect(enabled.notify.concordiaBaseUrl).toBe("http://127.0.0.1:14500");
   });
 
-  it("defaults the questions / contradiction / queryLog / feedback sections when absent", () => {
+  it("defaults the optional service sections when absent", () => {
     const config = loadConfig({
       configPath: writeConfig(fixtureDirectory()),
       environment: {},
@@ -218,9 +218,10 @@ describe("loadConfig", () => {
     });
     expect(config.queryLog).toEqual({ enabled: true, retentionDays: 30 });
     expect(config.feedback).toEqual({ minimumPoor: 3, poorRatio: 0.6 });
+    expect(config.cardGroupCache).toEqual({ hotThreshold: 2, maxEntries: 64 });
   });
 
-  it("rejects invalid questions / queryLog / feedback values instead of falling back", () => {
+  it("rejects invalid optional service values instead of falling back", () => {
     const directory = fixtureDirectory();
     const config = validConfig();
     config.questions = { maxPerRun: 0 };
@@ -242,6 +243,15 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({
         configPath: writeConfig(fixtureDirectory(), invalidFeedback),
+        environment: {},
+      }),
+    ).toThrowError(/Invalid config/);
+
+    const invalidCache = validConfig();
+    invalidCache.cardGroupCache = { hotThreshold: 0, maxEntries: 64 };
+    expect(() =>
+      loadConfig({
+        configPath: writeConfig(fixtureDirectory(), invalidCache),
         environment: {},
       }),
     ).toThrowError(/Invalid config/);

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/api/app.js";
 import type { ApiServices, QueryInput } from "../../src/api/contracts.js";
 import { CardRepository } from "../../src/cards/card-repository.js";
@@ -117,9 +117,22 @@ describe("clone API", () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  it("reports model readiness and card count from healthz", async () => {
-    await createCard("work", "public", "alpha", "fixture:alpha");
+  it("answers healthz from the front worker alone, without reading cards", async () => {
+    // 依存 (カード表 / 埋め込み) を触らないことが要点。触ると遅さが生存判定へ漏れる
+    // (spec/feature/operations.md §9)。カード数を数えていないので 0 枚でも 200。
+    const countCards = vi.spyOn(cards, "count");
+    const checkEmbedding = vi.spyOn(embedder, "assertReady");
     const response = await createApp(services).request("/healthz");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(countCards).not.toHaveBeenCalled();
+    expect(checkEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("reports model readiness and card count from readyz", async () => {
+    await createCard("work", "public", "alpha", "fixture:alpha");
+    const response = await createApp(services).request("/readyz");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -127,6 +140,19 @@ describe("clone API", () => {
       model: "synthetic-local",
       cards: 1,
       ollama: true,
+    });
+  });
+
+  it("returns 503 from readyz when the embedding backend is unavailable", async () => {
+    vi.spyOn(embedder, "assertReady").mockRejectedValueOnce(new Error("backend unavailable"));
+    const response = await createApp(services).request("/readyz");
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      model: "synthetic-local",
+      cards: 0,
+      ollama: false,
     });
   });
 
@@ -626,6 +652,29 @@ describe("clone API", () => {
     await expect(ids("limit=10")).resolves.toEqual([third.id, second.id, first.id]);
     expect((await app.request("/api/clone/cards?sort=situation")).status).toBe(400);
     expect((await app.request("/api/clone/cards?order=sideways")).status).toBe(400);
+  });
+
+  it("invalidates a hot card list after another SQLite connection changes a card", async () => {
+    const card = await createCard("work", "public", "cached", "fixture:cached-external");
+    const app = createApp(services);
+    const path = "/api/clone/cards";
+
+    // 既定 hotThreshold=2。2 回目の読み出し結果を保存する。
+    await app.request(path);
+    await app.request(path);
+
+    const external = openDatabase(join(directory, "genius.db"));
+    try {
+      external
+        .prepare("UPDATE clone_cards SET retired_at = ?, updated_at = ? WHERE id = ?")
+        .run(2_000, 2_000, card.id);
+    } finally {
+      external.close();
+    }
+
+    const refreshed = await app.request(path);
+    const body = (await refreshed.json()) as { cards: Array<{ id: string }> };
+    expect(body.cards.map((entry) => entry.id)).not.toContain(card.id);
   });
 
   it("hides superseded cards from the list unless includeSuperseded is requested", async () => {

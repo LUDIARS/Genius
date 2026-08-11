@@ -245,7 +245,8 @@ run が `failed` / `completed-with-errors` で終わると、`genius.config.json
 
 | Method | Path | 用途 |
 |---|---|---|
-| GET | `/healthz` | DB カード数と Ollama/model の readiness |
+| GET | `/healthz` | フロントワーカーの生存のみ (`{ok:true}`、I/O 無し) |
+| GET | `/readyz` | DB カード数と Ollama/model の readiness (依存不可なら 503) |
 | POST | `/api/clone/query` | ローカル embedding と sqlite-vec でカード検索 |
 | POST | `/api/clone/query-batch` | 複数クエリの embedding を 1 回の Ollama 往復に集約 (上限 50 件、p95 改善策) |
 | GET | `/api/clone/cards` | `domain`、`visibility`、`category`、`tag`、`q`、sort/order、`includeSuperseded`、`includeRetired`、pagination 付き一覧 |
@@ -475,7 +476,7 @@ sqlite3 data/genius.db ".backup 'data/backups/genius-snapshot.db'"
 | 症状 | 確認事項 |
 |---|---|
 | config が無いという起動エラー | `genius.config.example.json` を `genius.config.json` へコピーし、example を直接使用しない |
-| `/healthz` が 503 / Ollama unavailable | Ollama の稼働、`ollama list`、embedding model 名を確認する |
+| `/readyz` が 503 / Ollama unavailable | Ollama の稼働、`ollama list`、embedding model 名を確認する。`/healthz` はプロセス生存のみを返す |
 | model not pulled | `ollama pull <model>` 後に再実行する。別 backend へ自動切替しない |
 | Ollama GPU runner が明示エラーになる | GPU runtime を修復するか、意図して CPU 実行する場合だけ config の `embedding.numGpu` または `GENIUS_EMBEDDING_NUM_GPU=0` を設定する |
 | 疎なリクエスト後に最初のクエリだけ極端に遅い/詰まる | GPU runtime が壊れたホストでは unload 後の再ロードが GPU 経路を試みて失敗し得る。`embedding.keepAlive` または `GENIUS_EMBEDDING_KEEP_ALIVE` (例 `"30m"`) でモデル常駐を維持する |
