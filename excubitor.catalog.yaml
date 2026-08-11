@@ -10,12 +10,16 @@ services:
     repo: LUDIARS/Genius
     runtime: node
     cwd: ${ARS_ROOT}/Genius
-    command: npm run start
+    # npm を挟まず node を直接起動する。Excubitor の job-breakaway launcher は
+    # shell 経由 (npm) だと掴む pid が cmd.exe になり、identity 照合が外れて
+    # `could not be verified after breakaway spawn` になる。実プロセスは生き残るため
+    # 「サービスは動いているのに Excubitor では crashed」が常態化していた。
+    # shell を挟まない起動は launcher が detached で切り離すので pid が実プロセスになる。
+    command: node dist/server.js
     # 毎朝の ingest (Concordia Timer Delegation) は CLI から loopback の
     # POST /api/clone/ingest/run を叩くため、サービスが落ちていると取り込み自体が
     # 起動しない。よって常時起動 + 異常終了時の再起動を Excubitor に任せる。
-    # 前提: `npm run start` は `node dist/server.js` なので、この host では
-    # `npm run build` 済みの `dist/` と `genius.config.json` が存在すること
+    # 前提: この host では `npm run build` 済みの `dist/` と `genius.config.json` が存在すること
     # (どちらか欠けると起動即失敗 → on-failure が再起動を繰り返す)。
     # 注意: run 単位の失敗 (2026-07-20 の run が 10 日間気付かれなかった件) は
     # プロセスが生きたままでも起きるため、autostart/restart では検知できない。
@@ -24,7 +28,11 @@ services:
     restart_policy: on-failure
     health:
       type: http
-      url: http://localhost:4230/healthz
+      # localhost だと Node の fetch が ::1 を先に試して待たされ、1 秒の probe 上限に対して
+      # /healthz (Ollama 疎通を含み ~0.6 秒) が間に合わず健全でも failed になる。127.0.0.1 固定。
+      url: http://127.0.0.1:4230/healthz
       interval_sec: 30
+      # 起動直後の /healthz は埋め込みモデルのウォームアップを待つため既定 10 秒では足りない。
+      grace_period_sec: 30
     provides:
       GENIUS_URL: http://${host}:${port}
