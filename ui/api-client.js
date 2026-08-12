@@ -97,3 +97,24 @@ export function sendCardFeedback(id, rating, note) {
     ...(note ? { note } : {}),
   });
 }
+/** @implements SPEC-GENIUS-ACTIVE-QUESTION-HTTP */
+export function listQuestions(status = "open") {
+  const params = new URLSearchParams({ status });
+  return request(`${API_BASE}/questions?${params.toString()}`);
+}
+
+/**
+ * `winnerCardId` is required for contradiction questions and ignored otherwise.
+ * @implements SPEC-GENIUS-ACTIVE-QUESTION-HTTP
+ */
+export function answerQuestion(id, text, winnerCardId) {
+  return writeRequest(`${API_BASE}/questions/${encodeURIComponent(id)}/answer`, "POST", {
+    text,
+    ...(winnerCardId === null || winnerCardId === undefined ? {} : { winnerCardId }),
+  });
+}
+
+/** @implements SPEC-GENIUS-ACTIVE-QUESTION-HTTP */
+export function dismissQuestion(id) {
+  return writeRequest(`${API_BASE}/questions/${encodeURIComponent(id)}/dismiss`, "POST", {});
+}

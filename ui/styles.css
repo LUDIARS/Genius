@@ -346,3 +346,64 @@ textarea {
   color: inherit;
   opacity: 0.85;
 }
+
+/* Question queue (spec/feature/active-questioning.md §3.1). */
+
+.question-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.question-row {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.question-answer {
+  min-height: 60px;
+}
+
+.winner-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/*
+ * The radio has to sit next to its card id, not stretch across the row: the
+ * shared `input { width: 100% }` rule would otherwise push the label away and
+ * make the pair unreadable.
+ */
+.winner-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.winner-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.winner-option input[type="radio"] {
+  width: auto;
+  flex: none;
+}
+
+.winner-option span {
+  word-break: break-all;
+}
+
+.button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 2px 4px;
+}

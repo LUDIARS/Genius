@@ -77,6 +77,13 @@ export function formatNotificationText(notification: IngestRunNotification): str
   if (notification.error !== null) {
     lines.push(`run error: ${notification.error}`);
   }
+  // 質問生成の結果は 1 行だけ足す (spec/feature/active-questioning.md §5)。
+  // 失敗明細より前に置いて MAX_TEXT_LENGTH の切り詰めで落ちないようにする。
+  // @implements SPEC-GENIUS-ACTIVE-QUESTION-INGEST
+  const questions = notification.questions ?? null;
+  if (questions !== null) {
+    lines.push(`questions: ${questions.created} generated (open: ${questions.openCount})`);
+  }
   // 再処理コマンドは通知の実用部分なので、明細行より前に置いて
   // MAX_TEXT_LENGTH の切り詰めで落ちないようにする。
   lines.push(...retryHints(notification));
@@ -101,6 +108,7 @@ export function formatNotificationText(notification: IngestRunNotification): str
  * 付けると空振りする)。両方あるときは 2 行出す。
  */
 function retryHints(notification: IngestRunNotification): string[] {
+  if (notification.status === "completed") return [];
   const isolated = failedSources(notification, (scope) => scope !== "source");
   const sourceLevel = failedSources(notification, (scope) => scope === "source");
   if (isolated.length === 0 && sourceLevel.length === 0) {

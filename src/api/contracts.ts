@@ -17,6 +17,12 @@ import type { CardSortField, CardSortOrder } from "../cards/card-repository.js";
 import type { SupersedeChain } from "../cards/supersede-chain.js";
 import type { CardCategory, CreateCategoryInput } from "../domain/category.js";
 import type { IngestOptions, IngestRunRecord } from "../ingest/ingest-contracts.js";
+import type {
+  AnswerQuestionInput,
+  AnswerQuestionResult,
+} from "../questions/question-answer-service.js";
+import type { ListQuestionsInput } from "../questions/question-queue-repository.js";
+import type { QuestionQueueEntry } from "../questions/types.js";
 import type { SourceName } from "../readers/source-reader.js";
 
 /**
@@ -145,5 +151,15 @@ export interface ApiServices {
     summaries(cardIds: readonly string[]): Map<string, CardFeedbackSummary>;
     recent(cardId: string, limit?: number): CardFeedbackEntry[];
     isArchivedByFeedback(cardId: string): boolean;
+  };
+  /**
+   * Active-questioning queue (spec/feature/active-questioning.md §3.1・§4).
+   * @implements SPEC-GENIUS-ACTIVE-QUESTION-HTTP
+   */
+  questions: {
+    list(input: ListQuestionsInput): Promise<QuestionQueueEntry[]>;
+    get(id: string): Promise<QuestionQueueEntry | null>;
+    answer(input: AnswerQuestionInput): Promise<AnswerQuestionResult>;
+    dismiss(id: string): Promise<QuestionQueueEntry>;
   };
 }

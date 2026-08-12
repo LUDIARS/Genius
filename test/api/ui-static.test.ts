@@ -61,6 +61,12 @@ const services: ApiServices = {
     recent() { return []; },
     isArchivedByFeedback() { return false; },
   },
+  questions: {
+    async list() { return []; },
+    async get() { return null; },
+    async answer() { throw new Error("answer must not run for a rejected request"); },
+    async dismiss() { throw new Error("dismiss must not run for a rejected request"); },
+  },
 };
 
 const CARD_BODY = JSON.stringify({

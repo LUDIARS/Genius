@@ -107,6 +107,8 @@ Discord へ出すのは public 判定の質問だけに限る。
 
 ### 3.1 WebUI (全質問)
 
+Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-QUEUE`
+
 - 棚卸し WebUI (`/ui/`) に質問キュー画面を追加する。loopback 限定なので
   sensitive な場面もそのまま表示できる。
 - 操作: 回答する / 却下する (`dismissed`、以後同じ対象を訊かない) / 後で。
@@ -115,10 +117,18 @@ Discord へ出すのは public 判定の質問だけに限る。
 
 ### 3.2 Discord (public のみ、Concordia 経由)
 
+Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-DISCORD`
+
 Concordia の既存 chat API で完結する想定で、**Concordia 側の改修は不要**とする。
-ただし実際のパス・パラメータ・payload 形状は Concordia 側の正本を実装時に確認する
-(operations.md §4 の通知経路と同じ扱い — 下記は確認前の想定形)。想定と食い違った
-場合は本 spec を直す (Concordia を Genius 都合で改修しない)。
+
+**2026-08-09 に Concordia 側の正本 (`src/api/chat.ts`) で確認済み**: 想定どおりで
+Concordia の改修は不要だった。確認できた点:
+
+- `POST /v1/chat` の `channel` enum に `consultation` が存在する。
+- 応答は `{ "message": { id, channel, author_label, ts, text, in_reply_to, ... } }`。
+- **`id` は数値**。`questions.discord_message_id` は TEXT なので保存時に文字列化する。
+- `GET /v1/chat?channel=&since=&limit=` が `{ "messages": [...] }` を返し、各要素が
+  `in_reply_to` (数値または null) を持つ。返信参照は取れるので Discord 経路を有効にできる。
 
 - 送信: `POST <notify.concordiaBaseUrl>/v1/chat`
   (`channel: "consultation"`, `author_label: "Genius"`)。base URL は
@@ -134,10 +144,22 @@ Concordia の既存 chat API で完結する想定で、**Concordia 側の改修
   (Concordia の channel-archives は Genius 自身の Tier 1 ingest 元であり、
   送った内容は次回 ingest で DB へ環流する。sensitive がここを経由して public 側へ
   回る経路を作らない)。
-- Discord 経路が無効 (`notify.concordiaBaseUrl` が null) の場合は WebUI のみで動く。
+- Discord 経路が無効 (`notify.concordiaBaseUrl` が null、または
+  `questions.discordEnabled` が false) の場合は WebUI のみで動く。
   起動時に「Discord 質問は無効」と 1 行出す (無言で片方だけ動かさない)。
+- **矛盾質問 (②) は Discord へ出さない。** 解決には「どちらのカードが正しいか」の
+  選択が要り、それは WebUI にしかない (§3.1)。出すと適用できない返信を誘発する。
+- 返信の取り込み開始位置は「未回答のまま残っている質問の `asked_at` の最小値」から
+  求める。`asked_at` は Genius の Unix milliseconds、Concordia の `since` は Unix
+  seconds なので、送信時に秒へ切り下げる。カーソルを別に覚えないので、再起動しても
+  取りこぼさない。
+  - Concordia の現行 API は newest-first の `limit` のみで offset / `before` がない。
+    Genius は 1 回 200 件に制限し、上限到達時は「古い返信を省略した可能性」を警告する。
+    完全な pagination には Concordia 側の cursor 追加が必要で、無制限取得にはしない。
 
 ## 4. 回答 → カード
+
+Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-ANSWER`
 
 - 回答は既存の手動カード経路 (`POST /api/clone/cards` 相当のサービス) で
   `sourceRef: interview:<questionId>#<answerId>`、`confidence: 1.0`、category は
@@ -147,13 +169,23 @@ Concordia の既存 chat API で完結する想定で、**Concordia 側の改修
 - 回答文が判断カードの形 (situation / judgment / rationale) になっていない場合は、
   蒸留 backend で整形する。**元の回答文は `question_answers.text` に残す**
   (整形で意味が変わった場合に遡れるようにする)。
+  整形・カード作成・矛盾の後始末が失敗した間は質問を `open` に保ち、同じ answer id
+  から再試行できるようにする。回答を保存しただけで `answered` にしてはならない。
 - 矛盾質問の回答は、勝った側を残して負けた側を supersede / retire する (§3.1)。
 - ⑤ (棚卸し由来) の回答は、retire されたカードの置き換えとして新カードを作る。
 
 ## 5. cadence と運用
 
+Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-INGEST`
+
 - 起動契機: Tier 1 ingest の完了後 (`completed` / `completed-with-errors` 双方)。
   ingest の run 通知と同じ経路に「質問 N 件を生成」を 1 行足す。
+  - 質問生成は ingest の**後処理**であり、ここでの失敗は run の status を覆さない。
+    警告として出すだけにする (質問が作れないことは ingest の失敗ではない)。
+  - `completed` の run はこれまで通知を出していない。質問を 1 件以上作ったときだけ
+    通知を出す — 何も作っていない clean run で通知を増やさず、作ったのに誰も
+    知らない状態も作らないため。
+  - query_log の保持期間削除もこの後処理で行う (§1.2 の「ingest 完了後」)。
 - 上限: `questions.maxPerRun` (既定 5) / `questions.maxOpen` (既定 20)。
   未回答が溜まっている間は新規生成を止める (質問の山を作らない)。
 - 却下された対象・回答済みの対象は再質問しない (`question_targets` で判定)。

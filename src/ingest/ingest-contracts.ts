@@ -110,15 +110,35 @@ export interface IngestRunNotificationFailure {
  * 載せてよいのは run id・ソース名・失敗件数・エラー種別/メッセージ要約・
  * ソース相対パスのみ。文書本文・カード本文・絶対パスは禁止 (§4)。
  */
+/**
+ * Question generation outcome carried on the run notification
+ * (spec/feature/active-questioning.md §5). `null` = generation did not run.
+ */
+export interface IngestRunQuestions {
+  created: number;
+  openCount: number;
+}
+
 export interface IngestRunNotification {
   runId: string;
-  status: "failed" | "completed-with-errors";
+  status: "failed" | "completed" | "completed-with-errors";
   sources: readonly SourceName[];
   failedDocuments: number;
   unresolvedFailures: number;
   failures: readonly IngestRunNotificationFailure[];
   /** run 全体を止めた sanitize 済みエラー (failed 時のみ)。 */
   error: string | null;
+  /** ingest 完了後に走った質問生成の結果。走らなかったときは null。 */
+  questions?: IngestRunQuestions | null;
+}
+
+/**
+ * ingest 完了後に走る後処理 (spec/feature/active-questioning.md §5)。
+ * ここが throw しても ingest の結果は覆さない — 質問が作れなかったことは
+ * ingest の失敗ではないため。
+ */
+export interface IngestCompletionHook {
+  onRunCompleted(status: "completed" | "completed-with-errors"): Promise<IngestRunQuestions>;
 }
 
 export interface IngestRunNotifier {

@@ -9,6 +9,7 @@ import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerHealthRoute } from "./routes/health.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerQueryRoute } from "./routes/query.js";
+import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerStatsRoutes } from "./routes/stats.js";
 import { registerUiRoutes } from "./routes/ui.js";
 import { StaticAssetDirectory } from "./ui/static-asset-directory.js";
@@ -47,6 +48,8 @@ export function createApp(services: ApiServices, options: CreateAppOptions = {})
   registerCategoryRoutes(app, services.categories);
   registerIngestRoutes(app, services.ingest);
   registerStatsRoutes(app, services.stats, services.categories);
+  // @implements SPEC-GENIUS-ACTIVE-QUESTION-HTTP
+  registerQuestionRoutes(app, services.questions);
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError((error, c) => {
     if (error instanceof ApiInputError) return inputErrorResponse(c, error);

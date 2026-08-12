@@ -82,7 +82,8 @@
   "specRefs": [
     "Genius DB スキーマ / clone_cards — 判断カード (正)",
     "Genius DB スキーマ / 「活性カード」の定義 (正)",
-    "Genius 運用化設計 / 1. カテゴリーベースのカード (#3, #6)"
+    "Genius 運用化設計 / 1. カテゴリーベースのカード (#3, #6)",
+    "Genius 補完質問 (能動学習) 設計 / 4. 回答 → カード"
   ],
   "rationale": "The canonical card data + its controlled-vocabulary categories form one storage domain; active-card SQL is centralized here and referenced everywhere.",
   "updatedAt": "2026-08-02T08:02:27.657Z"

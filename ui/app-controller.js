@@ -7,6 +7,7 @@ import { createCardList } from "./card-list.js";
 import { createCategoryPanel } from "./category-panel.js";
 import { createFilterPanel } from "./filter-panel.js";
 import { createQuadrantForm } from "./quadrant-form.js";
+import { createQuestionController } from "./question-controller.js";
 import { createRetireForm } from "./retire-form.js";
 import { createStatusBar } from "./status-bar.js";
 import { createSupersedeForm } from "./supersede-form.js";
@@ -76,6 +77,14 @@ export function createAppController() {
   const categoryPanel = createCategoryPanel({
     onCreate: (name, description) => void submitCategory(name, description),
   });
+  const questionController = createQuestionController({
+    status,
+    onAnswerApplied: async (cardId) => {
+      await Promise.all([reloadStats(), refreshListIfRequested()]);
+      await showCard(cardId);
+    },
+    onSelectCard: (id) => void selectCard(id),
+  });
 
   const editors = el("div", { className: "editors hidden" }, [
     editForm.element,
@@ -96,6 +105,7 @@ export function createAppController() {
         detail.element,
         feedbackPanel.element,
         editors,
+        questionController.element,
         createForm.element,
         categoryPanel.element,
       ]),
@@ -105,7 +115,13 @@ export function createAppController() {
   /** @implements SPEC-UI-LAZY-LIST */
   async function start() {
     filters = filterPanel.read();
-    await Promise.all([reloadCategories(), reloadStats()]);
+    // The question queue is capped at maxOpen, so it is loaded up front; the
+    // card list is not (SPEC-UI-LAZY-LIST). The idle text above stays visible
+    // while this runs, and remains as the retry hint if the queue read fails.
+    await Promise.all([reloadCategories(), reloadStats(), questionController.start()]);
+    // The controls are usable while the header requests are in flight. Do not
+    // overwrite a page that was explicitly requested during that interval.
+    if (!listRequested) list.renderIdle();
   }
 
   async function reloadCategories() {

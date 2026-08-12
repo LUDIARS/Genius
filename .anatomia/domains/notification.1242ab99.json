@@ -1,6 +1,6 @@
 {
   "name": "notification",
-  "description": "Concordia chat notifications (POST /v1/chat) for failed/completed-with-errors runs, notify-failed logging, and (design) active-learning consultation delivery. Never emits card/document bodies or absolute paths.",
+  "description": "Concordia chat notifications (POST /v1/chat) for failed/completed-with-errors runs, clean runs that generated questions, notify-failed logging, and public-only active-learning consultation delivery. Never emits card/document bodies or absolute paths.",
   "presetRules": [
     {
       "preset": "couplingCap",
@@ -68,13 +68,15 @@
     }
   ],
   "templateRules": [],
-  "cardTemplate": "Summarise the \"notification\" domain: Concordia chat notifications (POST /v1/chat) for failed/completed-with-errors runs, notify-failed logging, and (design) active-learning consultation delivery. Never emits card/document bodies or absolute paths.",
+  "cardTemplate": "Summarise the \"notification\" domain: Concordia chat notifications (POST /v1/chat) for failed/completed-with-errors runs, clean runs that generated questions, notify-failed logging, and public-only active-learning consultation delivery. Never emits card/document bodies or absolute paths.",
   "source": "spec-draft",
   "mechanics": [],
   "specRefs": [
     "Genius — 自分クローン判断カード DB / Concordia 通知",
     "Genius 運用化設計 / 4. ingest 失敗の可視化と LLM フォールバック (#4)",
-    "Genius — 自分クローン判断カード DB / 日次運用と Concordia Timer Delegation"
+    "Genius — 自分クローン判断カード DB / 日次運用と Concordia Timer Delegation",
+    "Genius 補完質問 (能動学習) 設計 / 3.2 Discord (public のみ、Concordia 経由)",
+    "Genius 補完質問 (能動学習) 設計 / 5. cadence と運用"
   ],
   "rationale": "Outbound integration + run-contract clients (services/client/runtime) share the redaction rules and run-success contract used for external notification.",
   "updatedAt": "2026-08-02T08:02:27.669Z"

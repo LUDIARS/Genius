@@ -4,7 +4,8 @@ export type DistillPurpose =
   | "merge-check"
   | "categorize"
   | "contradiction-check"
-  | "question-generation";
+  | "question-generation"
+  | "answer-shaping";
 
 export type PromptContent = string | AsyncIterable<string>;
 

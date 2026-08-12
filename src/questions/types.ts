@@ -63,6 +63,33 @@ export interface QuestionRecord extends GeneratedQuestion {
   createdAt: number;
 }
 
+export const questionStatusSchema = z.enum(["open", "answered", "dismissed"]);
+export const answeredViaSchema = z.enum(["ui", "discord"]);
+
+export type QuestionStatus = z.infer<typeof questionStatusSchema>;
+export type AnsweredVia = z.infer<typeof answeredViaSchema>;
+
+export interface QuestionAnswerRecord {
+  id: string;
+  questionId: string;
+  text: string;
+  answeredVia: AnsweredVia;
+  /** Card distilled from this answer, or null while none was created. */
+  cardId: string | null;
+  createdAt: number;
+}
+
+/**
+ * A queue entry with everything the review UI needs to act on it: the stored
+ * answers and the two cards of a contradiction pair, so the reviewer can pick a
+ * winner without a second round trip (spec/feature/active-questioning.md §3.1).
+ */
+export interface QuestionQueueEntry extends QuestionRecord {
+  answers: QuestionAnswerRecord[];
+  /** Card ids of a `card-pair` target, in the canonical ascending order. */
+  pairCardIds: [string, string] | null;
+}
+
 export interface ContradictionPair {
   left: CloneCard;
   right: CloneCard;

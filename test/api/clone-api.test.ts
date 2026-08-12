@@ -109,6 +109,14 @@ describe("clone API", () => {
         cards: repository,
         feedback: new CardFeedbackRepository(database),
       }),
+      // Queue behaviour has its own suite (question-api.test.ts); this one only
+      // needs the shape so createApp can register the routes.
+      questions: {
+        async list() { return []; },
+        async get() { return null; },
+        async answer() { throw new Error("answer is covered by question-api.test.ts"); },
+        async dismiss() { throw new Error("dismiss is covered by question-api.test.ts"); },
+      },
     };
   });
 

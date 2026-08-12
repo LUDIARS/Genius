@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase, type GeniusDatabase } from "../../src/db/database.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import type {
+  IngestCompletionHook,
   IngestLogEntry,
   IngestLogger,
   IngestRunNotification,
@@ -146,8 +147,13 @@ describe("ingest failure isolation (spec/feature/operations.md section 4)", () =
     await rm(directory, { recursive: true, force: true });
   });
 
-  function createService(reader: SourceReader, failDistillForBadDocument: boolean): IngestService {
+  function createService(
+    reader: SourceReader,
+    failDistillForBadDocument: boolean,
+    completionHook: IngestCompletionHook | null = null,
+  ): IngestService {
     return new IngestService({
+      completionHook,
       distiller: {
         distill: async (document) => {
           if (failDistillForBadDocument && String(document.content).includes(SECRET_BODY)) {
@@ -251,6 +257,42 @@ describe("ingest failure isolation (spec/feature/operations.md section 4)", () =
 
     expect(finished).toMatchObject({ status: "completed", failedDocuments: 0 });
     expect(notifier.notifications).toHaveLength(0);
+  });
+
+  it("runs the completion hook and notifies when a clean run creates questions", async () => {
+    const statuses: string[] = [];
+    const service = createService(new TwoDocumentReader(), false, {
+      onRunCompleted: async (status) => {
+        statuses.push(status);
+        return { created: 2, openCount: 4 };
+      },
+    });
+
+    const run = service.start({ sources: ["memory"] });
+    const finished = await service.wait(run.id);
+
+    expect(finished.status).toBe("completed");
+    expect(statuses).toEqual(["completed"]);
+    expect(notifier.notifications).toHaveLength(1);
+    expect(notifier.notifications[0]).toMatchObject({
+      status: "completed",
+      questions: { created: 2, openCount: 4 },
+    });
+  });
+
+  it("keeps a clean run completed when its completion hook fails", async () => {
+    const service = createService(new TwoDocumentReader(), false, {
+      onRunCompleted: async () => { throw new Error("question backend unavailable"); },
+    });
+
+    const run = service.start({ sources: ["memory"] });
+    const finished = await service.wait(run.id);
+
+    expect(finished.status).toBe("completed");
+    expect(notifier.notifications).toHaveLength(0);
+    expect(warnings).toContain(
+      `Ingest run ${run.id} question generation failed: question backend unavailable`,
+    );
   });
 
   it("isolates a listDocuments failure to its source and finishes completed-with-errors", async () => {

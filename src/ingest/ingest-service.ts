@@ -7,9 +7,11 @@ import type {
   IngestFailureStore,
   IngestLogEntry,
   IngestLogger,
+  IngestCompletionHook,
   IngestOptions,
   IngestRunNotificationFailure,
   IngestRunNotifier,
+  IngestRunQuestions,
   IngestRunRecord,
   IngestRunStore,
   IngestStateStore,
@@ -33,6 +35,8 @@ export interface IngestServiceDependencies {
   logger: IngestLogger;
   /** null = 通知無効 (config で明示)。失敗 run を Concordia chat へ知らせる。 */
   notifier?: IngestRunNotifier | null;
+  /** null = 質問生成の配線なし。run 完了後に走る後処理 (Q8)。 */
+  completionHook?: IngestCompletionHook | null;
   readers: ReaderResolver;
   runs: IngestRunStore;
   state: IngestStateStore;
@@ -45,6 +49,7 @@ export class IngestService {
   readonly #failures: IngestFailureStore;
   readonly #logger: IngestLogger;
   readonly #notifier: IngestRunNotifier | null;
+  readonly #completionHook: IngestCompletionHook | null;
   readonly #readers: ReaderResolver;
   readonly #runs: IngestRunStore;
   readonly #state: IngestStateStore;
@@ -58,6 +63,7 @@ export class IngestService {
     this.#failures = dependencies.failures;
     this.#logger = dependencies.logger;
     this.#notifier = dependencies.notifier ?? null;
+    this.#completionHook = dependencies.completionHook ?? null;
     this.#readers = dependencies.readers;
     this.#runs = dependencies.runs;
     this.#state = dependencies.state;
@@ -196,8 +202,15 @@ export class IngestService {
         status === "completed" ? "run-completed" : "run-completed-with-errors",
         status === "completed" ? undefined : `${failures.length} document(s) failed`,
       ));
-      if (status === "completed-with-errors") {
-        await this.#notifyOutcome(run.id, status, options.sources, failures, null);
+      // 質問生成は ingest の後処理であって ingest の一部ではない。ここで
+      // 失敗しても run の status は覆さない (spec/feature/active-questioning.md §5)。
+      const questions = options.sources.some((source) => TIER_ONE_SOURCES.includes(source))
+        ? await this.#runCompletionHook(run.id, status)
+        : null;
+      // clean run では従来どおり黙るが、質問を作ったときだけは知らせる。
+      // 「生成したのに誰も知らない」状態を作らないため。
+      if (status === "completed-with-errors" || (questions !== null && questions.created > 0)) {
+        await this.#notifyOutcome(run.id, status, options.sources, failures, null, questions);
       }
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
@@ -375,12 +388,32 @@ export class IngestService {
    * 失敗 run の Concordia 通知。通知失敗は握りつぶさず stderr と
    * logs/ingest.jsonl に明示するが、ingest 本体の結果は覆さない (spec §4)。
    */
+  /**
+   * ingest 完了後の質問生成 (Q8)。フックが無ければ null を返す。フックの失敗は
+   * 警告として出すだけで、ingest の結果には影響させない。
+   */
+  async #runCompletionHook(
+    runId: string,
+    status: "completed" | "completed-with-errors",
+  ): Promise<IngestRunQuestions | null> {
+    // @implements SPEC-GENIUS-ACTIVE-QUESTION-INGEST
+    if (this.#completionHook === null) return null;
+    try {
+      return await this.#completionHook.onRunCompleted(status);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.#warningSink(`Ingest run ${runId} question generation failed: ${detail}`);
+      return null;
+    }
+  }
+
   async #notifyOutcome(
     runId: string,
-    status: "failed" | "completed-with-errors",
+    status: "failed" | "completed" | "completed-with-errors",
     sources: readonly SourceName[],
     failures: readonly IngestRunNotificationFailure[],
     error: string | null,
+    questions: IngestRunQuestions | null = null,
   ): Promise<void> {
     if (this.#notifier === null) return;
     try {
@@ -392,6 +425,7 @@ export class IngestService {
         unresolvedFailures: this.#failures.countUnresolved(sources),
         failures,
         error,
+        questions,
       });
     } catch (notifyError) {
       const detail = notifyError instanceof Error ? notifyError.message : String(notifyError);

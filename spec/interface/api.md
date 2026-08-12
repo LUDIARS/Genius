@@ -44,8 +44,40 @@
   (パストラバーサル不可)。ディレクトリ指定は `index.html` に解決する。
 - レスポンスは `Cache-Control: no-store` + `X-Content-Type-Options: nosniff` +
   `Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'`。
-- UI は既存 REST のみを使う (専用エンドポイントを持たない)。PATCH には
-  `changedBy: "ui"` を送る。
+- UI はカード操作について既存 REST のみを使う (専用エンドポイントを持たない)。
+  PATCH には `changedBy: "ui"` を送る。質問キューだけは下記の専用 endpoint を使う。
+
+### 補完質問 (`/api/clone/questions`)
+
+Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-HTTP`
+
+`spec/feature/active-questioning.md` §3.1・§4。loopback 限定なので sensitive な
+質問もそのまま返す。**公開 export には一切出さない。**
+
+| Method | Path | 説明 |
+|---|---|---|
+| GET | `/api/clone/questions` | 質問キュー一覧。`status` (`open`/`answered`/`dismissed`、既定は全件)・`limit` (1-200, 既定 50)・`offset` |
+| GET | `/api/clone/questions/:id` | 単一質問。未知 id は 404 |
+| POST | `/api/clone/questions/:id/answer` | 回答して質問を `answered` にし、カードを 1 枚作る |
+| POST | `/api/clone/questions/:id/dismiss` | 質問を `dismissed` にする (以後同じ対象を訊かない) |
+
+- 一覧の各要素は `questions` テーブルの列に加えて、`targets` (根拠)・`answers`
+  (保存済み回答、`cardId` 付き)・`pairCardIds` (矛盾質問の 2 枚、昇順) を持つ。
+- 回答 body は `{ "text": string, "winnerCardId"?: string }`。`answeredVia` は
+  受け付けない — この経路は loopback UI 専用なので常に `ui` で記録する
+  (Discord 経路は自分で `discord` として記録する)。
+- **矛盾質問 (`gapKind: "contradiction"`) は `winnerCardId` 必須**。ペアに含まれない
+  id や未指定は **409**。負けた側は回答から作られたカードで supersede される。
+- 棚卸し由来 (`gapKind: "curation"`) で対象カードが retire 済みなら、回答から
+  作られたカードを置き換え先として対象を supersede する。
+- 既に `answered` / `dismissed` の質問への回答・却下は **409** (二重操作を無言で
+  握りつぶさない)。
+- 回答は「まず `question_answers.text` へ原文を保存 → 蒸留でカード整形」の順で行う。
+  整形・カード作成に失敗しても質問は `open` のまま、回答 (`cardId: null`) は残り、
+  同じ回答を再送すると同じ answer id でカード化を再試行する。未完了の回答がある間は
+  別の回答での上書きと質問の却下を **409** にする。作られたカードの `sourceRef` は
+  `interview:<questionId>#<answerId>`、`confidence` は 1.0、象限とカテゴリーは
+  質問から継承する。
 
 ### ブラウザ経由の防御 (全 endpoint に適用)
 

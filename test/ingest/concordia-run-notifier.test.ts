@@ -83,6 +83,16 @@ describe("ConcordiaRunNotifier", () => {
   });
 
   it("suggests a retry command that the CLI actually accepts", () => {
+    const cleanWithQuestions = formatNotificationText(notification({
+      status: "completed",
+      failedDocuments: 0,
+      unresolvedFailures: 0,
+      failures: [],
+      questions: { created: 2, openCount: 4 },
+    }));
+    expect(cleanWithQuestions).toContain("questions: 2 generated (open: 4)");
+    expect(cleanWithQuestions).not.toContain("retry:");
+
     // 失敗した文書のソースだけを載せる (失敗の無いソースを retry させない)。
     const scoped = formatNotificationText(notification());
     expect(scoped).toContain("--sources memory --retry-failed");
