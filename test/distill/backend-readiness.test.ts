@@ -44,6 +44,28 @@ describe("distillation backend readiness", () => {
     });
   });
 
+  it("does not expose Claude CLI stderr when a completion fails", async () => {
+    const backend = new ClaudeCliDistillLlm({
+      command: process.execPath,
+      commandArgs: [resolve("test/fixtures/fake-claude.mjs"), "--fail-with-stderr"],
+      cwd: process.cwd(),
+      model: "test-model",
+      sensitiveCheckModel: "test-sensitive-model",
+    });
+
+    const completion = backend.complete({
+      purpose: "cards",
+      systemPrompt: "trusted instructions",
+      prompt: "private input",
+    });
+
+    await expect(completion).rejects.toThrow(
+      "Claude CLI failed (code=1, signal=null); stderr withheld",
+    );
+    await expect(completion).rejects.not.toThrow("simulated private CLI diagnostic");
+    await expect(completion).rejects.not.toThrow("private input");
+  });
+
   it("checks the configured Ollama model before accepting work", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       expect(init?.redirect).toBe("error");

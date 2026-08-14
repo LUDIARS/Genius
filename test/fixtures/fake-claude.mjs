@@ -5,6 +5,11 @@ if (args.includes("--version")) {
   process.exit(0);
 }
 
+if (args.includes("--fail-with-stderr")) {
+  process.stderr.write("simulated private CLI diagnostic\n");
+  process.exit(1);
+}
+
 let prompt = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) prompt += chunk;
