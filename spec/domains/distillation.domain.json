@@ -1,0 +1,39 @@
+{
+  "name": "distillation",
+  "description": "LLM distillation of documents into judgment cards (situation/judgment/rationale/quadrant/category/confidence), backend abstraction (claude-cli default / ollama), prompt vocabulary injection, and duplicate/supersede merge decisions.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/distill/"
+    },
+    {
+      "namePattern": "Distill"
+    },
+    {
+      "namePattern": "DistillLlm"
+    },
+    {
+      "namePattern": "distillDocument"
+    },
+    {
+      "namePattern": "mergeCard"
+    },
+    {
+      "namePattern": "backend"
+    },
+    {
+      "pathPattern": "(^|/)src/distill/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)prompts/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"distillation\" domain: LLM distillation of documents into judgment cards (situation/judgment/rationale/quadrant/category/confidence), backend abstraction (claude-cli default / ollama), prompt vocabulary injection, and duplicate/supersede merge decisions.",
+  "specRefs": [
+    "Genius 本体設計 / 5. 蒸留 (distill)",
+    "Judgment-card distillation",
+    "Genius 運用化設計 / 1.2 付与"
+  ],
+  "rationale": "Directory of 9 files with a coherent responsibility (document → cards) and its own LLM backend trust boundary, separate from embedding."
+}

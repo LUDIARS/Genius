@@ -1,0 +1,57 @@
+{
+  "name": "cli-and-eval",
+  "description": "CLI entrypoint (query/ingest/stats/reembed/categorize) driving the running API, and recall evaluation (eval/gold.jsonl, npm run eval) with fail-fast on malformed gold or query failure.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/cli"
+    },
+    {
+      "pathPattern": "/src/eval/"
+    },
+    {
+      "pathPattern": "/src/domain/"
+    },
+    {
+      "namePattern": "cli"
+    },
+    {
+      "namePattern": "parseArgs"
+    },
+    {
+      "namePattern": "eval"
+    },
+    {
+      "namePattern": "recall"
+    },
+    {
+      "namePattern": "gold"
+    },
+    {
+      "pathPattern": "(^|/)src/cli\\.ts$"
+    },
+    {
+      "pathPattern": "(^|/)src/eval/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/stats/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/feedback/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)test/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)hooks/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"cli-and-eval\" domain: CLI entrypoint (query/ingest/stats/reembed/categorize) driving the running API, and recall evaluation (eval/gold.jsonl, npm run eval) with fail-fast on malformed gold or query failure.",
+  "specRefs": [
+    "Genius — 自分クローン判断カード DB / CLI",
+    "Genius — 自分クローン判断カード DB / Recall 評価",
+    "Genius 運用化設計 / 1.2 付与"
+  ],
+  "rationale": "Operator-facing CLI and the recall harness are thin driver/quality domains over the service; grouped as coarse tooling rather than split into singletons."
+}

@@ -1,0 +1,33 @@
+{
+  "name": "source-readers",
+  "description": "Tier 1/Tier 2 source readers that extract documents from memory, session-logs, channel-archives, review, Memoria API, and Claude/Codex JSONL transcripts. Read-only; never mutate source data.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/readers/"
+    },
+    {
+      "namePattern": "Reader"
+    },
+    {
+      "namePattern": "read(Source|Document|Batch)"
+    },
+    {
+      "namePattern": "listDocuments"
+    },
+    {
+      "namePattern": "descriptor"
+    },
+    {
+      "pathPattern": "(^|/)src/readers/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"source-readers\" domain: Tier 1/Tier 2 source readers that extract documents from memory, session-logs, channel-archives, review, Memoria API, and Claude/Codex JSONL transcripts. Read-only; never mutate source data.",
+  "specRefs": [
+    "Genius 本体設計 — 判断カード RAG (擬似 FT) / 4. データソースと Tier",
+    "Genius — 自分クローン判断カード DB / Ingest と Tier",
+    "Genius DB スキーマ / ingest_state — 増分カーソル"
+  ],
+  "rationale": "The largest module (18 files) and a single clear responsibility: turning heterogeneous local sources into documents for distillation. Directory maps 1:1 to a domain."
+}

@@ -1,0 +1,39 @@
+{
+  "name": "embedding",
+  "description": "Local Ollama embedding client (bge-m3, 1024-dim), content-addressed embedding cache, keep-alive/num_gpu handling, and re-embedding for model migration. External embedding URLs are rejected.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/embedding/"
+    },
+    {
+      "namePattern": "Embedding"
+    },
+    {
+      "namePattern": "Embedder"
+    },
+    {
+      "namePattern": "embed"
+    },
+    {
+      "namePattern": "reembed"
+    },
+    {
+      "namePattern": "OllamaEmbedding"
+    },
+    {
+      "namePattern": "cache"
+    },
+    {
+      "pathPattern": "(^|/)src/embedding/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"embedding\" domain: Local Ollama embedding client (bge-m3, 1024-dim), content-addressed embedding cache, keep-alive/num_gpu handling, and re-embedding for model migration. External embedding URLs are rejected.",
+  "specRefs": [
+    "Genius 本体設計 / 2. アーキテクチャ",
+    "Genius — 自分クローン判断カード DB / Re-embedding",
+    "Genius DB スキーマ / embedding_meta — 埋め込みモデル管理"
+  ],
+  "rationale": "8-file directory owning the local-only embedding boundary — a security-critical concern (no external API) meriting its own domain."
+}

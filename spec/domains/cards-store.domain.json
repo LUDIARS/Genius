@@ -1,0 +1,52 @@
+{
+  "name": "cards-store",
+  "description": "Card model, CardRepository, active-card SQL definition (superseded_by/retired_at), patch/supersede/retire logic, and revision auditing (clone_card_revisions).",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/cards/"
+    },
+    {
+      "pathPattern": "/src/categories/"
+    },
+    {
+      "namePattern": "Card"
+    },
+    {
+      "namePattern": "CardRepository"
+    },
+    {
+      "namePattern": "activeCard"
+    },
+    {
+      "namePattern": "supersede"
+    },
+    {
+      "namePattern": "retire"
+    },
+    {
+      "namePattern": "preparePatch"
+    },
+    {
+      "namePattern": "categor"
+    },
+    {
+      "pathPattern": "(^|/)src/cards/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/categories/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/domain/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"cards-store\" domain: Card model, CardRepository, active-card SQL definition (superseded_by/retired_at), patch/supersede/retire logic, and revision auditing (clone_card_revisions).",
+  "specRefs": [
+    "Genius DB スキーマ / clone_cards — 判断カード (正)",
+    "Genius DB スキーマ / 「活性カード」の定義 (正)",
+    "Genius 運用化設計 / 1. カテゴリーベースのカード (#3, #6)",
+    "Genius 補完質問 (能動学習) 設計 / 4. 回答 → カード"
+  ],
+  "rationale": "The canonical card data + its controlled-vocabulary categories form one storage domain; active-card SQL is centralized here and referenced everywhere."
+}

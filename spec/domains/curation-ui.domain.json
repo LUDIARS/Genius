@@ -1,41 +1,24 @@
 {
   "name": "curation-ui",
   "description": "Card inventory WebUI (/ui/): quadrant/category/tag/full-text filters, sort, supersede/retire operations, quadrant change with server-side promotion re-check, manual card add, and question-queue (active learning) views.",
-  "presetRules": [
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
     {
-      "preset": "couplingCap",
-      "params": {
-        "targetPattern": "/ui/",
-        "by": "path",
-        "maxFanOut": 9007199254740991
-      }
+      "pathPattern": "/ui/"
     },
     {
-      "preset": "couplingCap",
-      "params": {
-        "targetPattern": "/src/api/ui/",
-        "by": "path",
-        "maxFanOut": 9007199254740991
-      }
+      "pathPattern": "/src/api/ui/"
     },
     {
-      "preset": "couplingCap",
-      "params": {
-        "targetPattern": "",
-        "by": "name",
-        "maxFanOut": 9007199254740991
-      }
+      "pathPattern": "(^|/)ui/(?:.*/)?[^/]+$"
     }
   ],
-  "templateRules": [],
   "cardTemplate": "Summarise the \"curation-ui\" domain: Card inventory WebUI (/ui/): quadrant/category/tag/full-text filters, sort, supersede/retire operations, quadrant change with server-side promotion re-check, manual card add, and question-queue (active learning) views.",
-  "source": "spec-draft",
-  "mechanics": [],
   "specRefs": [
     "Genius — 自分クローン判断カード DB / 棚卸し WebUI (`/ui/`)",
     "Genius 運用化設計 / 5",
     "Genius 補完質問 (能動学習) 設計 / 3.1 WebUI (全質問)"
   ],
-  "rationale": "15-file ui/ directory is a self-contained human-facing curation surface, distinct from the API it consumes.",
-  "updatedAt": "2026-08-02T08:02:27.661Z"
+  "rationale": "15-file ui/ directory is a self-contained human-facing curation surface, distinct from the API it consumes."
 }

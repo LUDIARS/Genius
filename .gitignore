@@ -9,3 +9,6 @@ dist/
 genius.config.json
 .env
 *.log
+
+# Anatomia のローカル状態 (ドメイン定義の正本は spec/domains/)
+.anatomia/

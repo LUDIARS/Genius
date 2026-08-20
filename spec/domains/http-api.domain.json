@@ -1,0 +1,50 @@
+{
+  "name": "http-api",
+  "description": "Hono HTTP service (loopback bind by default, configurable published bind), exact browser-origin guard, clone query/query-batch, card CRUD/list/supersede-chain, ingest run endpoints, healthz, stats, middleware, and UI static serving.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/api/"
+    },
+    {
+      "pathPattern": "/src/stats/"
+    },
+    {
+      "namePattern": "[Rr]oute"
+    },
+    {
+      "namePattern": "[Hh]andler"
+    },
+    {
+      "namePattern": "app\\.(get|post|patch)"
+    },
+    {
+      "namePattern": "healthz"
+    },
+    {
+      "namePattern": "middleware"
+    },
+    {
+      "namePattern": "stats"
+    },
+    {
+      "pathPattern": "(^|/)src/api/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/server\\.ts$"
+    },
+    {
+      "pathPattern": "(^|/)src/client/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"http-api\" domain: Hono HTTP service (loopback bind by default, configurable published bind), exact browser-origin guard, clone query/query-batch, card CRUD/list/supersede-chain, ingest run endpoints, healthz, stats, middleware, and UI static serving.",
+  "specRefs": [
+    "Genius — 自分クローン判断カード DB / HTTP API",
+    "Genius 運用化設計 / 5. カード棚卸し WebUI (#7)",
+    "Genius 運用化設計 / 2. sensitive/public ゲートの投機的実行 (#1)",
+    "Genius 本体設計 / 3. 四象限モデル",
+    "Genius HTTP API / 補完質問 (`/api/clone/questions`)"
+  ],
+  "rationale": "api/* directories (routes, middleware, ui) plus stats form one HTTP delivery domain with shared no-auth, bind, and browser-origin constraints."
+}

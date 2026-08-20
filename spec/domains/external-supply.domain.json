@@ -1,0 +1,39 @@
+{
+  "name": "external-supply",
+  "description": "Public-only card supply to Claude/Codex: stdio MCP server (genius_query), harness hooks (genius-supply / genius-harness-supply), fail-closed vs fail-open contracts, safe DTOs without sourceRef.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/mcp/"
+    },
+    {
+      "pathPattern": "/hooks/"
+    },
+    {
+      "namePattern": "mcp"
+    },
+    {
+      "namePattern": "genius_query"
+    },
+    {
+      "namePattern": "supply"
+    },
+    {
+      "namePattern": "hook"
+    },
+    {
+      "namePattern": "safeDto"
+    },
+    {
+      "pathPattern": "(^|/)src/mcp/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"external-supply\" domain: Public-only card supply to Claude/Codex: stdio MCP server (genius_query), harness hooks (genius-supply / genius-harness-supply), fail-closed vs fail-open contracts, safe DTOs without sourceRef.",
+  "specRefs": [
+    "Genius — 自分クローン判断カード DB / MCP server",
+    "Genius — 自分クローン判断カード DB / Harness hook",
+    "Genius — 自分クローン判断カード DB / セキュリティ境界"
+  ],
+  "rationale": "MCP + hooks share a public-fixed, redacting contract distinct from the loopback HTTP API; grouping them captures the export security boundary."
+}

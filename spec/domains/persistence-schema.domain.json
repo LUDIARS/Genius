@@ -1,0 +1,39 @@
+{
+  "name": "persistence-schema",
+  "description": "SQLite (better-sqlite3, WAL) database access, numbered idempotent migrations, sqlite-vec vec0 table, and the schema for cards/vectors/runs/failures/cursors/query_log/questions.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/db/"
+    },
+    {
+      "pathPattern": "/src/db/migrations/"
+    },
+    {
+      "namePattern": "[Mm]igration"
+    },
+    {
+      "namePattern": "migrate"
+    },
+    {
+      "namePattern": "openDb"
+    },
+    {
+      "namePattern": "schema"
+    },
+    {
+      "namePattern": "vec0"
+    },
+    {
+      "pathPattern": "(^|/)src/db/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"persistence-schema\" domain: SQLite (better-sqlite3, WAL) database access, numbered idempotent migrations, sqlite-vec vec0 table, and the schema for cards/vectors/runs/failures/cursors/query_log/questions.",
+  "specRefs": [
+    "Genius DB スキーマ",
+    "Genius DB スキーマ / distill_runs — 実行記録",
+    "Genius DB スキーマ / clone_vec — ベクトル索引"
+  ],
+  "rationale": "db/ + migrations own the physical schema and migration discipline (no DROP/type-change) — a foundational domain the card/query domains build on."
+}

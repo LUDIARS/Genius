@@ -1,0 +1,46 @@
+{
+  "name": "ingest-pipeline",
+  "description": "Orchestrates ingest runs: incremental cursor advance, per-document failure isolation, ingest_failures persistence, --retry-failed, and completed-with-errors run status.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/ingest/"
+    },
+    {
+      "namePattern": "Ingest"
+    },
+    {
+      "namePattern": "runIngest"
+    },
+    {
+      "namePattern": "cursor"
+    },
+    {
+      "namePattern": "failure"
+    },
+    {
+      "namePattern": "retryFailed"
+    },
+    {
+      "namePattern": "IngestRun"
+    },
+    {
+      "pathPattern": "(^|/)src/ingest/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/services/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/runtime/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"ingest-pipeline\" domain: Orchestrates ingest runs: incremental cursor advance, per-document failure isolation, ingest_failures persistence, --retry-failed, and completed-with-errors run status.",
+  "specRefs": [
+    "Genius — 自分クローン判断カード DB / Ingest 失敗の隔離と再処理",
+    "Genius 運用化設計 / 4. ingest 失敗の可視化と LLM フォールバック (#4)",
+    "Genius DB スキーマ / ingest_failures — 失敗文書 (migration 002)",
+    "Genius 補完質問 (能動学習) 設計 / 5. cadence と運用"
+  ],
+  "rationale": "Coordination layer distinct from the readers it drives and the distiller it invokes; owns run lifecycle and failure quarantine semantics."
+}

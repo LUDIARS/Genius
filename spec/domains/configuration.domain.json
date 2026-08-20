@@ -1,0 +1,37 @@
+{
+  "name": "configuration",
+  "description": "genius.config.json loader, relative-path resolution, env-var overrides (GENIUS_*), server bind/origin declarations, Excubitor-catalog port resolution, source declarations, and fail-fast on invalid/missing config.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/config/"
+    },
+    {
+      "namePattern": "[Cc]onfig"
+    },
+    {
+      "namePattern": "loadConfig"
+    },
+    {
+      "namePattern": "resolvePort"
+    },
+    {
+      "namePattern": "env"
+    },
+    {
+      "namePattern": "GENIUS_"
+    },
+    {
+      "pathPattern": "(^|/)src/config/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"configuration\" domain: genius.config.json loader, relative-path resolution, env-var overrides (GENIUS_*), server bind/origin declarations, Excubitor-catalog port resolution, source declarations, and fail-fast on invalid/missing config.",
+  "specRefs": [
+    "Genius — プロジェクトルール",
+    "Genius DB スキーマ / 設定",
+    "Genius — 自分クローン判断カード DB / Excubitor catalog",
+    "Genius 運用化設計 / 5. カード棚卸し WebUI (#7)"
+  ],
+  "rationale": "The config directory centralizes the fail-fast configuration contract that every other domain depends on for paths, ports, server exposure, allowed browser origins, and backends."
+}

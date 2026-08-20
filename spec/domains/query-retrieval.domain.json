@@ -1,0 +1,39 @@
+{
+  "name": "query-retrieval",
+  "description": "Retrieval-conditioned judgment: local embedding of query, sqlite-vec KNN over clone_vec, quadrant/active/category filtering, tier/confidence re-rank, and query_log measurement for retrieval-miss detection.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "/src/query/"
+    },
+    {
+      "namePattern": "[Qq]uery"
+    },
+    {
+      "namePattern": "search"
+    },
+    {
+      "namePattern": "knn"
+    },
+    {
+      "namePattern": "rerank"
+    },
+    {
+      "namePattern": "queryLog"
+    },
+    {
+      "pathPattern": "(^|/)src/query/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/questions/(?:.*/)?[^/]+$"
+    }
+  ],
+  "cardTemplate": "Summarise the \"query-retrieval\" domain: Retrieval-conditioned judgment: local embedding of query, sqlite-vec KNN over clone_vec, quadrant/active/category filtering, tier/confidence re-rank, and query_log measurement for retrieval-miss detection.",
+  "specRefs": [
+    "Genius 本体設計 / 6. 検索・提供面",
+    "Genius DB スキーマ / clone_vec — ベクトル索引",
+    "Genius 運用化設計 / 1.3 検索"
+  ],
+  "rationale": "Search/serve path is the product's core (~200ms card supply) and a distinct concern from ingest-side writing."
+}
