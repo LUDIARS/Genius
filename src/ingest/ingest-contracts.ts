@@ -41,6 +41,14 @@ export interface IngestStateStore {
 
 export interface IngestRunStore {
   create(sources: readonly SourceName[]): IngestRunRecord;
+  /**
+   * running 中の run に文書単位の進捗を反映する。finish/fail を待つと
+   * `get()` が完走まで filesProcessed=0 を返し続け、外形監視から
+   * 「停滞」に見えてしまうため (spec/feature/operations.md §11)。
+   *
+   * @implements SPEC-GENIUS-INGEST-RUN-PROGRESS
+   */
+  progress(id: string, totals: IngestTotals): void;
   finish(
     id: string,
     totals: IngestTotals,

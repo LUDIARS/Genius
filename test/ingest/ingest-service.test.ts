@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openDatabase, type GeniusDatabase } from "../../src/db/database.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import type {
@@ -252,6 +252,66 @@ describe("IngestService operational behavior", () => {
       skipped: 1,
       reason: "no-cards-produced",
     }));
+  });
+
+  it("reflects per-document progress while the run is still running", async () => {
+    const descriptors: SourceDocumentDescriptor[] = [
+      { source: "memory", tier: 1, locator: "a.md", mtimeMs: 1 },
+      { source: "memory", tier: 1, locator: "b.md", mtimeMs: 2 },
+    ];
+    let releaseSecondDocument: (() => void) | undefined;
+    const secondDocumentBlocked = new Promise<void>((resolve) => {
+      releaseSecondDocument = resolve;
+    });
+    let distillCalls = 0;
+    const reader: SourceReader = {
+      source: "memory",
+      tier: 1,
+      async listDocuments() {
+        return { documents: descriptors, nextCursor: { mtimeMs: 2, locator: "b.md" } };
+      },
+      async readDocument(target) {
+        return {
+          descriptor: target,
+          sourceRef: `memory:${target.locator}`,
+          title: target.locator,
+          content: "Synthetic input",
+          metadata: {},
+        };
+      },
+    };
+    const service = new IngestService({
+      distiller: {
+        distill: async () => {
+          distillCalls += 1;
+          if (distillCalls === 2) await secondDocumentBlocked;
+          return { cardsCreated: 1, cardsMerged: 0 };
+        },
+      },
+      failures: new SqliteIngestFailureStore(database),
+      logger: new MemoryLogger(),
+      readers: { resolve: () => reader },
+      runs,
+      state: new SqliteIngestStateStore(database),
+      warningSink: () => undefined,
+    });
+
+    const run = service.start({ sources: ["memory"] });
+    await vi.waitFor(() => {
+      expect(runs.get(run.id)).toMatchObject({
+        status: "running",
+        filesProcessed: 1,
+        cardsCreated: 1,
+        cardsMerged: 0,
+        skipped: 0,
+      });
+    });
+
+    releaseSecondDocument?.();
+    await expect(service.wait(run.id)).resolves.toMatchObject({
+      status: "completed",
+      filesProcessed: 2,
+    });
   });
 
   it("rejects a second run that overlaps an active source", async () => {

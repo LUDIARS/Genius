@@ -312,6 +312,8 @@ export class IngestService {
       totals.cardsMerged += result.cardsMerged;
       const skipped = result.cardsCreated === 0;
       if (skipped) totals.skipped += 1;
+      // @implements SPEC-GENIUS-INGEST-RUN-PROGRESS
+      this.#runs.progress(runId, totals);
       this.#failures.resolve(source, descriptor.locator);
       await this.#logger.append({
         ...logEntry(

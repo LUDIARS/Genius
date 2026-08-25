@@ -105,6 +105,18 @@ export class SqliteIngestRunStore implements IngestRunStore {
     return record;
   }
 
+  /** @implements SPEC-GENIUS-INGEST-RUN-PROGRESS */
+  progress(id: string, totals: IngestTotals): void {
+    const result = this.#database
+      .prepare(
+        `UPDATE distill_runs SET
+           files_processed = ?, cards_created = ?, cards_merged = ?, skipped = ?
+         WHERE id = ?`,
+      )
+      .run(totals.filesProcessed, totals.cardsCreated, totals.cardsMerged, totals.skipped, id);
+    if (result.changes !== 1) throw new Error(`Unknown ingest run: ${id}`);
+  }
+
   finish(
     id: string,
     totals: IngestTotals,

@@ -379,3 +379,28 @@ Traceability ID: `SPEC-GENIUS-CARD-GROUP-CACHE`
 
 キャッシュしないもの: ベクトル検索の結果 (クエリ文ごとに違うため当たらない。埋め込み自体は
 `embedding_cache` が既に持っている)、カード 1 枚の取得 (DB の主キー引きで十分速い)。
+
+## 11. running 中の進捗可視化 (2026-08-26)
+
+Traceability ID: `SPEC-GENIUS-INGEST-RUN-PROGRESS`
+
+現状の問題: `IngestRunStore.create()` は `distill_runs.files_processed` を 0 で
+INSERT し、`finish()`/`fail()` (run 完了時) までこの値を更新しない。したがって
+`GET /api/clone/ingest/runs/:id` は run が `running` の間ずっと `filesProcessed: 0`
+を返し続ける。実際は `logs/ingest.jsonl` の `document-completed` イベントで
+文書ごとの進捗が着実に記録されているにもかかわらず、外形監視 (日次 ingest
+delegation の polling) からは「進捗ゼロで停滞している」ように見え、実際には
+正常に進行中の run を誤って停滞と判断させる。
+
+- **文書単位で `distill_runs` へ反映する**: `IngestRunStore` に
+  `progress(id, totals): void` を追加し、`IngestService#processDocument` が
+  1 文書の蒸留に成功するたびに現在の累積 `totals` を書き込む
+  (`src/ingest/ingest-service.ts`, `src/ingest/sqlite-ingest-stores.ts`)。
+  `status`/`finished_at`/`notes` は更新しない — run の完了判定は従来どおり
+  `finish()`/`fail()` の責務のまま。
+  - source 丸ごとスキップ (`allowMissing` によるスキップ) や source レベル
+    失敗はこの対象にしない。個々の文書処理ではないため。
+- **これにより解決するもの**: `GET /api/clone/ingest/runs/:id` を polling する
+  運用ジョブ (日次 ingest delegation 等) が、run 開始直後の
+  `filesProcessed: 0` を早期に「停滞」と誤判定するリスクを下げる。ログ
+  (`ingest.jsonl`) を tail する必要なく API だけで進捗を確認できる。
