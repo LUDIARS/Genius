@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import type { GeniusDatabase } from "../src/db/database.js";
-import { openDatabase, runMigrations } from "../src/db/index.js";
+import { MIGRATIONS, openDatabase, runMigrations } from "../src/db/index.js";
 
 const databases: GeniusDatabase[] = [];
 
@@ -91,7 +91,7 @@ describe("database migrations", () => {
     expect(sourceRefIndex?.unique).toBe(1);
   });
 
-  it("seeds the initial controlled category vocabulary exactly once", () => {
+  it("seeds the controlled category vocabulary exactly once", () => {
     const database = migratedMemoryDatabase();
     expect(runMigrations(database)).toEqual([]);
 
@@ -104,11 +104,52 @@ describe("database migrations", () => {
       "delegation",
       "general",
       "impl-design",
+      "issue-discovery",
       "ops-lifecycle",
       "review",
       "workflow",
       "writing",
     ]);
+  });
+
+  it("adds issue-discovery when upgrading an existing version 8 database", () => {
+    const database = openDatabase(":memory:");
+    databases.push(database);
+    const migrationsThroughVersion8 = MIGRATIONS.filter(
+      (migration) => migration.version <= 8,
+    );
+
+    expect(runMigrations(database, migrationsThroughVersion8)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8,
+    ]);
+    expect(
+      database
+        .prepare<[string], { count: number }>(
+          "SELECT count(*) AS count FROM card_categories WHERE name = ?",
+        )
+        .get("issue-discovery")?.count,
+    ).toBe(0);
+
+    expect(runMigrations(database)).toEqual([9]);
+    expect(
+      database
+        .prepare<[string], { name: string; description: string }>(
+          "SELECT name, description FROM card_categories WHERE name = ?",
+        )
+        .get("issue-discovery"),
+    ).toEqual({
+      name: "issue-discovery",
+      description: "課題発見判断 — 問題の上流原因の指摘・将来リスクの提起・課題の起案",
+    });
+
+    expect(runMigrations(database)).toEqual([]);
+    expect(
+      database
+        .prepare<[string], { count: number }>(
+          "SELECT count(*) AS count FROM card_categories WHERE name = ?",
+        )
+        .get("issue-discovery")?.count,
+    ).toBe(1);
   });
 
   it("rejects clone_cards writes whose category is outside card_categories", () => {

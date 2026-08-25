@@ -35,6 +35,18 @@ Generalize the situation so it transfers to future work while preserving the con
 decision. Do not invent missing reasoning; if the rationale is not stated or clearly
 implied, leave the decision out rather than guessing at it.
 
+## Issue-discovery category
+
+Use `issue-discovery` when a human (especially neco) raises a problem to be addressed,
+rather than merely describing the problem itself. This includes identifying an upstream
+cause behind a surface failure, raising a future risk before it happens, proposing a new
+problem or goal to address, and deciding that something is *not* a problem. Preserve the
+reason for a rejection too: it helps a future issue scout discard false positives.
+
+For these cards, `situation` describes the observed surface problem, `judgment` states
+the proposed issue (or the rejection), and `rationale` connects it to the upstream cause
+or future consequence.
+
 ## Gold standard: write like a "Why / How to apply" note, not a summary
 
 The best cards read like a rule a colleague left behind, not a description of what
@@ -162,6 +174,33 @@ deadline are gone. The
 transferable judgment (don't compress a risky rollout to hit an external deadline) survives.
 Mark it `sensitive` because it still traces to a specific client relationship even after
 generalizing -- when in doubt, sensitive.
+
+### Example D (work × public, issue discovery)
+
+Input:
+
+> The batch has failed three times this month. The immediate error changes each time, but
+> each failure starts after a manual schema edit. The issue is not the individual errors;
+> we need a migration review gate before manual edits can reach production.
+
+Output:
+
+```json
+{
+  "cards": [
+    {
+      "situation": "A recurring batch failure appears after manual schema edits, even though the immediate error varies",
+      "judgment": "Treat the missing migration review gate as the issue and require review before manual schema edits reach production",
+      "rationale": "The changing immediate errors share the upstream cause of unreviewed schema edits, so fixing each error separately will not prevent recurrence",
+      "tags": ["issue-discovery", "schema", "prevention"],
+      "domain": "work",
+      "visibility": "public",
+      "category": "issue-discovery",
+      "confidence": 0.9
+    }
+  ]
+}
+```
 
 ### Non-example -- discard, do not card-ify
 

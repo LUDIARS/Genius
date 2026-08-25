@@ -58,6 +58,14 @@ describe("prompts/distill.md calibration", () => {
     expect(hasEmpty).toBe(true);
   });
 
+  it("includes a synthetic issue-discovery calibration example", () => {
+    const hasIssueDiscoveryExample = fences.some((fence) => {
+      const parsed = cardArraySchema.parse(JSON.parse(fence));
+      return parsed.cards.some((card) => card.category === "issue-discovery");
+    });
+    expect(hasIssueDiscoveryExample).toBe(true);
+  });
+
   it("documents every required output field", () => {
     for (const field of [
       "situation",
