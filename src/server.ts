@@ -1,10 +1,27 @@
 import { serve } from "@hono/node-server";
+import {
+  checkBuildFreshness,
+  formatBuildFreshnessWarning,
+  type BuildFreshnessResult,
+} from "./runtime/build-freshness.js";
 import { createRuntime } from "./runtime/create-runtime.js";
 import { closeServerAndRuntime } from "./runtime/shutdown-resources.js";
 
-/** @implements SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY */
+/**
+ * @implements SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY
+ * @implements SPEC-GENIUS-BUILD-FRESHNESS
+ */
 async function main(): Promise<void> {
-  const runtime = await createRuntime();
+  const freshness = await checkBuildFreshness().catch((): BuildFreshnessResult => {
+    // 鮮度確認は運用上の補助信号なので、I/O エラーでサービス起動を止めない。
+    process.stderr.write(
+      "[build] Could not check dist/ freshness; continuing without a freshness signal.\n",
+    );
+    return { stale: false, staleSample: null };
+  });
+  if (freshness.stale) process.stderr.write(`${formatBuildFreshnessWarning(freshness)}\n`);
+
+  const runtime = await createRuntime({ buildStale: freshness.stale });
   const { bindHost, allowedOrigins } = runtime.config.server;
   const server = serve({
     fetch: runtime.app.fetch,

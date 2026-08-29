@@ -12,7 +12,7 @@ import { MAX_FEEDBACK_NOTE_LENGTH } from "../../src/domain/feedback.js";
 const services: ApiServices = {
   health: {
     get() { return { ok: true } as const; },
-    async ready() { return { ok: true, model: "test", cards: 0, ollama: true }; },
+    async ready() { return { ok: true, model: "test", cards: 0, ollama: true, buildStale: false }; },
   },
   query: {
     async query() { return { cards: [], tookMs: 0 }; },

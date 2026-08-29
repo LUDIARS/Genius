@@ -62,6 +62,8 @@ export interface GeniusRuntime {
 
 export interface CreateRuntimeOptions extends LoadConfigOptions {
   checkReadiness?: boolean;
+  /** @implements SPEC-GENIUS-BUILD-FRESHNESS — 起動時に一度だけ評価済みの dist 鮮度判定。 */
+  buildStale?: boolean;
 }
 
 export async function createRuntime(options: CreateRuntimeOptions = {}): Promise<GeniusRuntime> {
@@ -181,7 +183,7 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       thresholds: config.feedback,
     });
     const services: ApiServices = {
-      health: new HealthService(cards, embedder),
+      health: new HealthService(cards, embedder, options.buildStale ?? false),
       query,
       cards,
       categories: categoryRepository,

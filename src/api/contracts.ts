@@ -39,6 +39,8 @@ export interface ReadinessStatus {
   model: string;
   cards: number;
   ollama: boolean;
+  /** `dist/` が現在の `src/` より古いビルドで動いている疑いがあるか。 */
+  buildStale: boolean;
 }
 
 export interface QueryInput {

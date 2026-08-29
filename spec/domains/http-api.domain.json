@@ -35,6 +35,9 @@
       "pathPattern": "(^|/)src/server\\.ts$"
     },
     {
+      "pathPattern": "(^|/)src/runtime/build-freshness\\.ts$"
+    },
+    {
       "pathPattern": "(^|/)src/client/(?:.*/)?[^/]+$"
     }
   ],
@@ -44,7 +47,8 @@
     "Genius 運用化設計 / 5. カード棚卸し WebUI (#7)",
     "Genius 運用化設計 / 2. sensitive/public ゲートの投機的実行 (#1)",
     "Genius 本体設計 / 3. 四象限モデル",
-    "Genius HTTP API / 補完質問 (`/api/clone/questions`)"
+    "Genius HTTP API / 補完質問 (`/api/clone/questions`)",
+    "Genius 運用化設計 / 12. dist 鮮度チェック"
   ],
   "rationale": "api/* directories (routes, middleware, ui) plus stats form one HTTP delivery domain with shared no-auth, bind, and browser-origin constraints."
 }

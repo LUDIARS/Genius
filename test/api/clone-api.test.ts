@@ -91,7 +91,7 @@ describe("clone API", () => {
       error: null,
     };
     services = {
-      health: new HealthService(cards, embedder),
+      health: new HealthService(cards, embedder, false),
       query,
       cards,
       categories: new CategoryRepository(database),
@@ -148,6 +148,19 @@ describe("clone API", () => {
       model: "synthetic-local",
       cards: 1,
       ollama: true,
+      buildStale: false,
+    });
+  });
+
+  it("reports a stale startup build from readyz", async () => {
+    services.health = new HealthService(cards, embedder, true);
+
+    const response = await createApp(services).request("/readyz");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      buildStale: true,
     });
   });
 
@@ -161,6 +174,7 @@ describe("clone API", () => {
       model: "synthetic-local",
       cards: 0,
       ollama: false,
+      buildStale: false,
     });
   });
 

@@ -16,14 +16,19 @@ import { CardService } from "./card-service.js";
  * Ollama 疎通とカード件数を返し、埋め込みが使えなければ 503 になる。
  *
  * @implements SPEC-GENIUS-HEALTH-READINESS
+ * @implements SPEC-GENIUS-BUILD-FRESHNESS
  */
 export class HealthService {
   readonly #cards: CardService;
   readonly #embedder: EmbeddingClient;
+  /** 起動時に一度だけ評価した `dist/` の鮮度判定 (SPEC-GENIUS-BUILD-FRESHNESS)。 */
+  readonly #buildStale: boolean;
 
-  constructor(cards: CardService, embedder: EmbeddingClient) {
+  /** @implements SPEC-GENIUS-BUILD-FRESHNESS */
+  constructor(cards: CardService, embedder: EmbeddingClient, buildStale: boolean) {
     this.#cards = cards;
     this.#embedder = embedder;
+    this.#buildStale = buildStale;
   }
 
   /**
@@ -34,7 +39,10 @@ export class HealthService {
     return { ok: true };
   }
 
-  /** 準備確認。埋め込みバックエンドとカード件数まで見る (呼ばれたときだけ)。 */
+  /**
+   * 準備確認。埋め込みバックエンドとカード件数まで見る (呼ばれたときだけ)。
+   * @implements SPEC-GENIUS-BUILD-FRESHNESS
+   */
   async ready(): Promise<ReadinessStatus> {
     let ollama = true;
     try {
@@ -49,6 +57,7 @@ export class HealthService {
       model: this.#embedder.model,
       cards: this.#cards.count(),
       ollama,
+      buildStale: this.#buildStale,
     };
   }
 }

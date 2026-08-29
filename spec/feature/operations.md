@@ -404,3 +404,41 @@ delegation の polling) からは「進捗ゼロで停滞している」よう�
   運用ジョブ (日次 ingest delegation 等) が、run 開始直後の
   `filesProcessed: 0` を早期に「停滞」と誤判定するリスクを下げる。ログ
   (`ingest.jsonl`) を tail する必要なく API だけで進捗を確認できる。
+
+## 12. dist 鮮度チェック (2026-08-29)
+
+Traceability ID: `SPEC-GENIUS-BUILD-FRESHNESS`
+
+現状の問題: 上記 §11 の fix (commit 3313e33/4152037, 2026-08-26 main マージ) を
+反映した後も、2026-08-29 の日次 ingest run (`01M17EW8CHDEZA7C2FEYAZ21NP`) で
+「`filesProcessed: 0` のまま停滞している」ように見える表示バグが**再発**した。
+原因は fix 自体の不備ではなく、Excubitor 常駐プロセス (`node dist/server.js`)
+が `npm run build` を再実行されないまま起動し続けていたこと — `dist/ingest/*.js`
+が fix マージ前 (2026-08-25 15:31 ビルド) のまま古く、`progress()` 呼び出しを
+持たない旧ロジックで動いていた。`logs/ingest.jsonl` 上は `document-completed` /
+`cardsCreated` が着実に進んでいたため、run は実際には正常進行していた。
+
+`restart_policy: on-failure` の Excubitor 管理下では、`src/` の変更や main への
+マージだけではプロセスは再起動されない (クラッシュ時のみ再起動) ため、
+「コードは直った」と「動いているプロセスに反映された」の間にビルド漏れという
+無音のギャップが生まれる。これはコードからは検知できず、運用ジョブが毎回
+DB を直接 SELECT して `dist/` のファイル時刻と突き合わせない限り気づけない。
+
+- **起動時に一度だけ `dist/` の鮮度を評価する**: `src/runtime/build-freshness.ts`
+  の `checkBuildFreshness()` が `src/**/*.ts` (declaration ファイル除く) と
+  対応する `dist/**/*.js` の有無と mtime を比較し、出力が無いか src が新しい
+  ファイルが 1 件でもあれば `stale: true` を返す。`dist/` 自体が存在しない
+  (未ビルド) 場合は
+  stale 扱いにしない — それは起動失敗として別途顕在化するため。
+- **起動を止めない**: ビルド鮮度は「設定不備」ではなく運用上の警告なので、
+  fail-fast (起動中断) はしない。`src/server.ts` が起動直後に stderr へ
+  `[build] dist/ appears stale ...` を出し、`createRuntime({ buildStale })`
+  経由で `HealthService` に伝搬、`GET /readyz` の応答に `buildStale: boolean`
+  として乗る。`/healthz` (§9 の理由により I/O 無し・依存を見ない契約) には
+  含めない。鮮度確認自体が I/O エラーになった場合も、診断を stderr に出して
+  起動は継続し、`buildStale: false` とする。
+- **検知後の対処は引き続き人間 / Excubitor の担当**: このチェックは「古い
+  ビルドで動いている」ことを可視化するだけで、`npm run build` の実行や
+  サービス再起動を自動では行わない (既存方針: サービス起動・再起動は
+  Excubitor / 人間の担当)。運用ジョブは `buildStale: true` を見たら
+  ingest 停滞ではなくビルド更新の必要性として報告する。
