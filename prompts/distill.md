@@ -21,6 +21,16 @@ listed here. If no category clearly fits, use `general`.
 
 {{category-vocabulary}}
 
+**Do not invent a category from the document's own headings or topic labels.** A
+`review` source document is organized under headings like "Vulnerability",
+"Code Quality", "Test Coverage", or "CI/CD Supply Chain" -- these are the
+*document's* section names, not `category` values. Never turn a heading or topic
+label into a new category such as `cicd_supply_chain` or `test_coverage`; that
+value does not exist in the list above and will be rejected. If a card drawn from
+such a section does not clearly match one of the categories above (most often
+`impl-design`, `review`, or `general`), use `general` -- do not derive a category
+name from the surrounding document structure.
+
 ## What counts as a card
 
 Extract only counterfactual decisions: a situation where more than one reasonable
