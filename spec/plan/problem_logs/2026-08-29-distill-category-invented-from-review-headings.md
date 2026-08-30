@@ -2,7 +2,7 @@
 
 - Date recorded: 2026-08-29
 - Incident observed: 2026-08-29 Tier 1 daily ingest (run `01M14WFN0WCDF02PVWW60FX3NW`)
-- Status: Fixed in this branch (prompt only)
+- Status: Mitigated by prompt change; still recurring as of 2026-08-31
 - Area: Distillation / prompt
 - Severity: Medium
 
@@ -46,11 +46,13 @@ section names, not `category` values) and the exact invented values observed
 `general` when no listed category clearly fits rather than deriving one from
 surrounding document structure.
 
-This is a prompt-only change; no code path changed. Escalation path if this
-recurs: capture the raw `category` value again (via the same one-off, out-of-band
-reproduction — never persisted to `ingest_failures` or logs) to check whether the
-model is still deriving from headings or has moved on to a different invented
-pattern. If prompt-only fixes keep failing to hold, consider constrained generation
-or another observable recovery path that preserves the existing fail-fast rule:
-out-of-vocabulary values must still be rejected rather than silently coerced to
-`general`.
+This is a prompt-only mitigation; no code path changed. A later Tier 1 run on
+2026-08-31 still produced 14 `category: invalid_value` failures from 169 `review`
+documents; one `--retry-failed` attempt resolved 7 and left 7 recurring failures.
+The next diagnosis must capture only the raw `category` value again (via the same
+one-off, out-of-band reproduction — never persisted to `ingest_failures` or logs)
+to determine whether the model is still deriving from headings or has moved on to
+a different invented pattern. Because the prompt-only fix did not eliminate the
+failure, evaluate constrained generation or another observable recovery path that
+preserves the existing fail-fast rule: out-of-vocabulary values must still be
+rejected rather than silently coerced to `general`.
