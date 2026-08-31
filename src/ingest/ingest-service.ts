@@ -28,6 +28,52 @@ const TIER_ONE_SOURCES: readonly SourceName[] = [
 ];
 const TIER_TWO_SOURCES: readonly SourceName[] = ["claude-jsonl", "codex-jsonl"];
 
+/**
+ * @implements SPEC-GENIUS-INGEST-READER-IO-TIMEOUT
+ * reader の Promise が返らないまま run 全体を停滞させないための上限。
+ * incident の詳細と、この対策では event-loop starvation を解消できない制約は
+ * spec/plan/problem_logs/2026-09-01-ingest-reader-io-no-timeout.md を参照。
+ */
+const READER_LIST_TIMEOUT_MS = 120_000;
+const READER_READ_TIMEOUT_MS = 60_000;
+
+/**
+ * reader 呼び出しに上限を掛ける。既に受け取った Promise は汎用的には
+ * cancel できないため、時間切れ後は完了を待たずに run を進める。
+ */
+function withReaderTimeout<T>(
+  source: SourceName,
+  operation: string,
+  timeoutMs: number,
+  task: Promise<T>,
+): Promise<T> {
+  return new Promise<T>((resolvePromise, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(
+        new SourceReaderError(source, `${operation} timed out after ${timeoutMs}ms`),
+      );
+    }, timeoutMs);
+    timer.unref?.();
+    task.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolvePromise(value);
+      },
+      (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export interface IngestServiceDependencies {
   clock?: () => number;
   distiller: DocumentDistiller;
@@ -186,9 +232,17 @@ export class IngestService {
           this.#warningSink(
             `Ingest source failed (run ${run.id}): ${source} — ${classified.kind}: ${classified.message}`,
           );
-          await this.#logger.append(
-            logEntry(this.#clock, run.id, source, emptyTotals(), "source-failed", classified.message),
-          );
+          await this.#logger.append({
+            ...logEntry(
+              this.#clock,
+              run.id,
+              source,
+              emptyTotals(),
+              "source-failed",
+              classified.message,
+            ),
+            errorKind: classified.kind,
+          });
         }
       }
       const status = failures.length === 0 ? "completed" : "completed-with-errors";
@@ -252,12 +306,17 @@ export class IngestService {
     failures: IngestRunNotificationFailure[],
   ): Promise<void> {
     const cursor = this.#state.get(source);
-    const batch = await reader.listDocuments(cursor, {
-      // 未指定は「未読を全部」の意味なので、キー自体を渡さない (operations.md §6)。
-      ...(reader.tier === 2 && options.budgetFiles !== undefined
-        ? { budgetFiles: options.budgetFiles }
-        : {}),
-    });
+    const batch = await withReaderTimeout(
+      source,
+      "listDocuments",
+      READER_LIST_TIMEOUT_MS,
+      reader.listDocuments(cursor, {
+        // 未指定は「未読を全部」の意味なので、キー自体を渡さない (operations.md §6)。
+        ...(reader.tier === 2 && options.budgetFiles !== undefined
+          ? { budgetFiles: options.budgetFiles }
+          : {}),
+      }),
+    );
     for (const descriptor of batch.documents) {
       await this.#processDocument(runId, source, reader, descriptor, totals, failures);
     }
@@ -301,7 +360,12 @@ export class IngestService {
     failures: IngestRunNotificationFailure[],
   ): Promise<void> {
     try {
-      const document = await reader.readDocument(descriptor);
+      const document = await withReaderTimeout(
+        source,
+        "readDocument",
+        READER_READ_TIMEOUT_MS,
+        reader.readDocument(descriptor),
+      );
       await this.#logger.append({
         ...logEntry(this.#clock, runId, source, emptyTotals(), "document-started"),
         sourceRef: document.sourceRef,

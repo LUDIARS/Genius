@@ -442,3 +442,45 @@ DB を直接 SELECT して `dist/` のファイル時刻と突き合わせない
   サービス再起動を自動では行わない (既存方針: サービス起動・再起動は
   Excubitor / 人間の担当)。運用ジョブは `buildStale: true` を見たら
   ingest 停滞ではなくビルド更新の必要性として報告する。
+
+## 13. reader I/O のタイムアウト (2026-09-01)
+
+Traceability ID: `SPEC-GENIUS-INGEST-READER-IO-TIMEOUT`
+
+現状の問題: 2026-09-01 の Tier1 run (`01M1CKP6D2EG2TPD2S0EPG0SNA`) は
+`filesProcessed=0` のまま 6 分超無進行、`logs/ingest.jsonl` と stderr の
+両方にこの run 分のログが 0 件だった (`run-started` すら次のイベントが
+続かない)。§11/§12 の既存 fix はどちらも適用済みで無関係と確認済み。
+後に `/healthz` (§9 の契約により I/O 無し・応答時間はイベントループの
+空き具合そのもの) までタイムアウトし始めた。この後者は未解決 Promise
+だけでは説明できず、同じ原因だったかは特定できていない。
+
+調査で判明した欠落: run 開始後の I/O 経路はほとんどが既にタイムアウト付きだった
+(Claude CLI 完了 5 分、Claude CLI readiness 10〜30 秒、jsonl ロガー
+append 5 秒 — `2026-08-04-ingest-jsonl-logger-hang.md` で対策済み、
+Memoria reader の fetch 30 秒)。しかし `IngestService#ingestSource` の
+`reader.listDocuments()` と `#processDocument` の `reader.readDocument()`
+だけは無時限の await のままだった。ここが返らなければ、呼び出し前に書く
+`run-started` / `source-started` より後の進行が止まる。ただし今回の観測は
+当該 run のログ自体が 0 件だったため、この欠落だけでは症状全体を説明できず、
+実際の詰まり箇所と `/healthz` timeout の原因は事後特定できていない。
+また、イベントループ自体が塞がれた場合は timer callback も実行されないため、
+本節の timeout はそのケースを解消しない。
+
+- **`listDocuments`/`readDocument` の両方に上限を掛ける**:
+  `src/ingest/ingest-service.ts` の `withReaderTimeout()` が reader 呼び出しを
+  ラップする。`listDocuments` は 120 秒、`readDocument` は 60 秒。
+- **タイムアウトは既存の分類・隔離経路にそのまま乗せる**: `SourceReaderError`
+  を投げるので、`listDocuments` の timeout はソース単位の失敗
+  (Memoria #696 と同じ経路、`errorKind: source-read-failed`)、`readDocument`
+  の timeout は文書単位の失敗 (`ingest_failures` に記録され
+  `--retry-failed` の対象になる) として run を止めずに続行する。
+- **元の Promise 自体は打ち切れない**: 呼び出し側が既に受け取った汎用 Promise
+  には共通の cancel API が無いため、タイムアウト後も元の呼び出しは宙に残る。
+  reader 自身が `AbortSignal` 等を扱う場合のキャンセルは reader の責務とする。
+  jsonl ロガーの既存対策と同じトレードオフを踏襲し、以後の run 進行は
+  それを待たずに進める。
+- **reader stall の診断材料**: `errorKind: source-read-failed`
+  かつメッセージに `listDocuments timed out` / `readDocument timed out` が
+  含まれるログが出れば、event loop が応答可能である限り、どの `source` の
+  どちらの呼び出しで詰まったかがログだけで分かる。

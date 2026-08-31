@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openDatabase, type GeniusDatabase } from "../../src/db/database.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import type {
@@ -448,6 +448,60 @@ describe("ingest failure isolation (spec/feature/operations.md section 4)", () =
       warnings.some((message) => message.includes("Failed to write ingest document failure log")),
     ).toBe(true);
     expect(warnings.join(" ")).not.toContain(SECRET_BODY);
+  });
+
+  it("isolates a listDocuments call that never settles instead of stalling the run forever", async () => {
+    vi.useFakeTimers();
+    try {
+      const reader = new TwoDocumentReader();
+      reader.listDocuments = () => new Promise<never>(() => {});
+      const service = createService(reader, false);
+      const run = service.start({ sources: ["memory"] });
+      const finished = service.wait(run.id);
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await finished;
+
+      expect(result).toMatchObject({ status: "completed-with-errors", error: null });
+      expect(logger.entries).toContainEqual(expect.objectContaining({
+        event: "source-failed",
+        source: "memory",
+        errorKind: "source-read-failed",
+        reason: "[memory] listDocuments timed out after 120000ms",
+      }));
+      expect(notifier.notifications[0]?.failures).toEqual([
+        expect.objectContaining({ source: "memory", errorKind: "source-read-failed" }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("isolates a readDocument call that never settles as a document-level failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const reader = new TwoDocumentReader();
+      reader.readDocument = () => new Promise<never>(() => {});
+      const service = createService(reader, false);
+      const run = service.start({ sources: ["memory"] });
+      const finished = service.wait(run.id);
+
+      // 2 文書とも readDocument がハングするため、逐次処理の各文書ぶん
+      // タイムアウトを進める必要がある。
+      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const result = await finished;
+
+      expect(result).toMatchObject({ status: "completed-with-errors", failedDocuments: 2 });
+      expect(failures.listUnresolved(["memory"])).toHaveLength(2);
+      expect(logger.entries).toContainEqual(expect.objectContaining({
+        event: "document-failed",
+        errorKind: "source-read-failed",
+        reason: "[memory] readDocument timed out after 60000ms",
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rejects retryFailed combined with budgetFiles", () => {
