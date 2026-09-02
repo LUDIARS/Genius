@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ConcordiaQuestionChannel,
-  SensitiveQuestionEgressError,
   UnsupportedQuestionEgressError,
   formatQuestionText,
 } from "../../src/questions/concordia-question-channel.js";
@@ -60,12 +59,24 @@ describe("Concordia question channel (Q6)", () => {
     expect(body.text).toContain("この場面ではどう判断しますか?");
   });
 
-  it("refuses to send a sensitive question", async () => {
+  it("sends a sensitive question to the dedicated genius channel", async () => {
+    // genius は meta カテゴリ配下で channel-archives の対象外 = Tier1 ingest へ
+    // 環流しない。 それが sensitive を許せる根拠 (spec §3.2)。
+    const fetchMock = vi.fn(async () => jsonResponse({ message: { id: 99, channel: "genius", author_label: "Genius", ts: 1, text: "x", in_reply_to: null } }));
+    const channel = new ConcordiaQuestionChannel({ baseUrl: BASE_URL, fetch: fetchMock as unknown as typeof fetch });
+
+    await expect(channel.ask(question({ visibility: "sensitive" }))).resolves.toBe("99");
+    const [, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+    const body = JSON.parse(String(init.body)) as { channel: string };
+    expect(body.channel).toBe("genius");
+  });
+
+  it("still refuses contradiction questions regardless of visibility", async () => {
     const fetchMock = vi.fn();
     const channel = new ConcordiaQuestionChannel({ baseUrl: BASE_URL, fetch: fetchMock as unknown as typeof fetch });
 
-    await expect(channel.ask(question({ visibility: "sensitive" })))
-      .rejects.toThrow(SensitiveQuestionEgressError);
+    await expect(channel.ask(question({ visibility: "sensitive", gapKind: "contradiction" })))
+      .rejects.toThrow(UnsupportedQuestionEgressError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -82,6 +93,8 @@ describe("Concordia question channel (Q6)", () => {
     const text = formatQuestionText(question());
     expect(text).not.toContain("LOG1");
     expect(text).not.toContain("E:\\");
+    expect(text).not.toContain("retrieval-miss");
+    expect(text).not.toContain("review");
   });
 
   it("drops replies without in_reply_to and Genius' own messages", async () => {
@@ -129,7 +142,7 @@ describe("Discord question relay (Q6)", () => {
     const answered: { questionId: string; answeredVia: string; text: string }[] = [];
     const replySince: number[] = [];
     const queue = {
-      listUnaskedPublic: () => [entry()],
+      listUnasked: () => [entry()],
       markAsked: (id: string, messageId: string) => asked.push({ id, messageId }),
       earliestOutstandingAskedAt: () => 10_500,
       findByDiscordMessageId: (id: string) => (id === "4321" ? entry({ discordMessageId: "4321" }) : null),
@@ -165,7 +178,7 @@ describe("Discord question relay (Q6)", () => {
   it("keeps going when one question fails to post", async () => {
     const warnings: string[] = [];
     const queue = {
-      listUnaskedPublic: () => [entry({ id: "QBAD" }), entry({ id: "QOK" })],
+      listUnasked: () => [entry({ id: "QBAD" }), entry({ id: "QOK" })],
       markAsked: () => {},
       earliestOutstandingAskedAt: () => null,
       findByDiscordMessageId: () => null,

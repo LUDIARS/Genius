@@ -107,6 +107,7 @@ export class QuestionQueueRepository {
   readonly #clock: () => number;
   readonly #idFactory: () => string;
 
+  /** @implements SPEC-GENIUS-ACTIVE-QUESTION-QUEUE */
   constructor(database: GeniusDatabase, options: QuestionQueueRepositoryOptions = {}) {
     this.#database = database;
     this.#clock = options.clock ?? Date.now;
@@ -139,17 +140,24 @@ export class QuestionQueueRepository {
   }
 
   /**
-   * Open public questions that have not been posted to Discord yet.
+   * Open questions that have not been posted to the genius channel yet.
+   *
+   * visibility では絞らない。 sensitive も専用の `genius` チャンネルへ出す
+   * (spec §3.2、2026-09-03 neco 指示)。 public 限定にしていた頃は sensitive が
+   * 配信されずキューに滞留し、 `questions.maxOpen` を埋めて新規生成ごと止めていた
+   * (実測 open 20/20 中 16 件が sensitive)。
    *
    * Contradiction questions are excluded on purpose: resolving one requires
    * picking a winning card, which only the WebUI offers (§3.1). Posting them
    * would invite replies that cannot be applied.
+   *
+   * @implements SPEC-GENIUS-ACTIVE-QUESTION-DISCORD
    */
-  listUnaskedPublic(limit: number): QuestionQueueEntry[] {
+  listUnasked(limit: number): QuestionQueueEntry[] {
     const rows = this.#database
       .prepare<[number], QuestionRow>(
         `SELECT * FROM questions
-          WHERE status = 'open' AND visibility = 'public' AND asked_at IS NULL
+          WHERE status = 'open' AND asked_at IS NULL
             AND gap_kind <> 'contradiction'
           ORDER BY created_at ASC LIMIT ?`,
       )

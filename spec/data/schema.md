@@ -188,7 +188,7 @@ rating 別の件数だけとする。
 | context | TEXT | なぜ訊くのかの 1 行 |
 | category | TEXT | `card_categories` 参照 |
 | domain | TEXT | `work` / `hobby` |
-| visibility | TEXT | `public` / `sensitive` (二重チェックゲート通過値。public のみ Discord 可) |
+| visibility | TEXT | `public` / `sensitive` (二重チェックゲート通過値。矛盾質問以外は専用 Genius channel へ配信可) |
 | gap_kind | TEXT | `low-confidence` / `contradiction` / `category-gap` / `retrieval-miss` / `curation` |
 | status | TEXT | `open` / `answered` / `dismissed` (既定 `open`) |
 | asked_at | INTEGER NULL | Discord へ送った時刻。WebUI のみなら NULL |

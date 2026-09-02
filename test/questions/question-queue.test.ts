@@ -141,6 +141,38 @@ function serviceFor(db: GeniusDatabase, cards: RecordingCards): {
 }
 
 describe("question queue (Q5)", () => {
+  it("selects both public and sensitive unasked questions but excludes contradictions", () => {
+    const db = database();
+    let nextId = 0;
+    let now = 0;
+    const repository = new QuestionRepository(db, {
+      clock: () => ++now,
+      idFactory: () => `ID${++nextId}`,
+    });
+    const create = (
+      visibility: "public" | "sensitive",
+      gapKind: "low-confidence" | "contradiction",
+      targetId: string,
+    ) => repository.createOpen({
+      question: `Question ${targetId}`,
+      context: "Context",
+      category: "review",
+      domain: "work",
+      visibility,
+      gapKind,
+      targets: [{ kind: "card", id: targetId }],
+    }, 10);
+    const publicQuestion = create("public", "low-confidence", "PUBLIC");
+    const sensitiveQuestion = create("sensitive", "low-confidence", "SENSITIVE");
+    create("sensitive", "contradiction", "CONTRADICTION");
+    const alreadyAsked = create("public", "low-confidence", "ASKED");
+    const queue = new QuestionQueueRepository(db, { clock: () => 100 });
+    queue.markAsked(alreadyAsked.id, "123");
+
+    expect(queue.listUnasked(10).map((question) => question.id))
+      .toEqual([publicQuestion.id, sensitiveQuestion.id]);
+  });
+
   it("lists open questions with their answers and pair ids", () => {
     const db = database();
     seedQuestion(db, {

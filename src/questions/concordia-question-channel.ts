@@ -46,13 +46,26 @@ export class ConcordiaQuestionChannelError extends Error {
 }
 
 /**
- * Raised when something asks to publish a question that is not public. Discord
- * is the one egress out of loopback, so this is refused rather than downgraded
- * or truncated (spec/feature/active-questioning.md §3.2).
+ * sensitive な質問を出してよい唯一のチャンネル。
+ *
+ * `genius` は Discord の **meta カテゴリ**配下に作られる。 Concordia の
+ * channel-archives は sessions / archive カテゴリ配下しか書き出さない
+ * (`archiveStaleChannels` の targetCategories) ため、 このチャンネルの内容は
+ * アーカイブされず、 Genius の Tier1 ingest (`channelArchivesDir`) へ環流しない。
+ * **これが sensitive を許せる唯一の根拠**なので、 送り先チャンネルを変えるときは
+ * この前提を必ず再検証すること (2026-09-03 neco 指示 + 実装確認)。
+ */
+const SENSITIVE_ALLOWED_CHANNEL = "genius";
+
+/**
+ * Raised when something asks to publish a sensitive question somewhere other
+ * than the dedicated genius channel. Discord is the one egress out of loopback,
+ * so this is refused rather than downgraded or truncated
+ * (spec/feature/active-questioning.md §3.2).
  */
 export class SensitiveQuestionEgressError extends Error {
   constructor(questionId: string) {
-    super(`Question ${questionId} is sensitive and must never be sent to Discord`);
+    super(`Question ${questionId} is sensitive and may only be sent to the ${SENSITIVE_ALLOWED_CHANNEL} channel`);
     this.name = "SensitiveQuestionEgressError";
   }
 }
@@ -72,12 +85,12 @@ export interface ConcordiaQuestionChannelOptions {
 }
 
 /**
- * Q6 — public な質問だけを Concordia chat へ出し、返信を拾ってくる経路
+ * Q6 — 質問を専用の Genius channel へ出し、返信を拾ってくる経路
  * (spec/feature/active-questioning.md §3.2)。
  *
  * 送るのは質問文と context だけ。カード本文・sourceRef・絶対パス・query_log の
- * 生テキストは載せない。Concordia の channel-archives は Genius 自身の Tier 1
- * ingest 元なので、ここへ出した内容は次の ingest で DB へ戻ってくる。
+ * 生テキストは載せない。`genius` は channel-archives の対象外なので、ここへ
+ * 出した内容は Genius の Tier 1 ingest へ環流しない。
  *
  * @implements SPEC-GENIUS-ACTIVE-QUESTION-DISCORD
  */
@@ -86,6 +99,7 @@ export class ConcordiaQuestionChannel {
   readonly #fetch: typeof globalThis.fetch;
   readonly #warningSink: (message: string) => void;
 
+  /** @implements SPEC-GENIUS-ACTIVE-QUESTION-DISCORD */
   constructor(options: ConcordiaQuestionChannelOptions) {
     const baseUrl = normalizeLoopbackHttpUrl(options.baseUrl, "notify.concordiaBaseUrl");
     this.#chatUrl = new URL("/v1/chat", baseUrl);
@@ -94,9 +108,16 @@ export class ConcordiaQuestionChannel {
       ?? ((message) => process.stderr.write(`${message}\n`));
   }
 
-  /** Posts a public question and returns the Concordia message id as text. */
+  /**
+   * Posts a question to the genius channel and returns its message id as text.
+   * @implements SPEC-GENIUS-ACTIVE-QUESTION-DISCORD
+   */
   async ask(question: QuestionRecord): Promise<string> {
-    if (question.visibility !== "public") throw new SensitiveQuestionEgressError(question.id);
+    // sensitive は専用チャンネルのときだけ許す。 CHANNEL を戻すと (= 環流する面へ
+    // 出すようになると) ここで落ちる — 前提が崩れたまま黙って送らないための番人。
+    if (question.visibility !== "public" && CHANNEL !== SENSITIVE_ALLOWED_CHANNEL) {
+      throw new SensitiveQuestionEgressError(question.id);
+    }
     if (question.gapKind === "contradiction") {
       throw new UnsupportedQuestionEgressError(question.id);
     }
@@ -171,7 +192,6 @@ export function formatQuestionText(question: QuestionRecord): string {
   const text = [
     `[genius] ${question.question}`,
     question.context,
-    `(${question.gapKind} / ${question.category})`,
     "この投稿へ返信すると回答として取り込みます。",
   ].join("\n");
   return text.length <= MAX_TEXT_LENGTH ? text : `${text.slice(0, MAX_TEXT_LENGTH - 1)}…`;

@@ -1,6 +1,6 @@
 # Genius 補完質問 (能動学習) 設計
 
-status: draft (2026-07-30 neco 方針決定の反映)
+status: draft (2026-09-03 neco 方針決定の反映)
 親設計: `spec/feature/clone-db.md` (approved) / `spec/feature/operations.md` (運用化)
 前提タスク: category カード (operations.md §1)・棚卸し WebUI と supersede/非活性化 (§5)
 
@@ -18,9 +18,10 @@ Voluptas のアンケートは 12 次元 / 15 軸に 1 問ずつ割り当てた*
 Genius のカードは蒸留由来で「取りこぼし」が測れるため、固定カタログを持ち込まず
 **コーパスの不確かさを検出してから質問を生成する適応型**にする。
 
-回答経路の決定 (neco 2026-07-30): **WebUI + Discord (public のみ)**。
-work×sensitive が 1,000 枚超あり、質問文には元の場面が含まれるため、
-Discord へ出すのは public 判定の質問だけに限る。
+回答経路の当初決定 (neco 2026-07-30): **WebUI + Discord (public のみ)**。
+work×sensitive が 1,000 枚超あり、質問文には元の場面が含まれるため、当初は
+Discord へ出すのを public 判定の質問だけに限っていた。2026-09-03 の方針変更で、
+矛盾質問以外は sensitive も専用の `genius` チャンネルへ配信する (§3.2)。
 
 ## 1. 穴の検出 (gap detection)
 
@@ -84,7 +85,7 @@ Discord へ出すのは public 判定の質問だけに限る。
   `category` (統制語彙)、`domain`、`visibility`、`gapKind` (§1 表の 5 値)、
   `targets` (根拠カード id / query_log id)。
 - `visibility` は**カード蒸留と同じ二重チェックゲート** (`LlmPublicCardGate`) を通す。
-  疑わしきは sensitive。public のみ Discord へ出せる (§3)。
+  疑わしきは sensitive。配信可否とは独立に分類を保持する (§3)。
 - 1 回の生成バッチは `questions.maxPerRun` (既定 5)。ingest 完了後に起動する。
 
 ### 2.1 新規テーブル
@@ -115,7 +116,7 @@ Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-QUEUE`
 - 矛盾質問 (②) は「どちらが正しいか」を選ぶ UI にし、選択で**負けた側を
   supersede または retire** する (retire/supersede は operations.md §5 の実装を使う)。
 
-### 3.2 Discord (public のみ、Concordia 経由)
+### 3.2 Discord (専用 Genius channel、Concordia 経由)
 
 Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-DISCORD`
 
@@ -148,11 +149,28 @@ Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-DISCORD`
   polling し、`in_reply_to` が `discord_message_id` に一致するメッセージを回答として
   取り込む。`in_reply_to` 相当の返信参照が取れない場合は Discord 経路を有効にしない
   (誤ったメッセージを回答として取り込まない)。
-- **public 判定でない質問は絶対に送らない**。送信ペイロードには質問文と context のみを
-  含め、カード本文・sourceRef・絶対パス・query_log の生テキストは載せない
-  (Concordia の channel-archives は Genius 自身の Tier 1 ingest 元であり、
-  送った内容は次回 ingest で DB へ環流する。sensitive がここを経由して public 側へ
-  回る経路を作らない)。
+- **sensitive も `genius` チャンネルへ出す (2026-09-03 neco 指示で方針変更)**。
+  従来は「public 判定でない質問は絶対に送らない」としていたが、その根拠は
+  「Concordia の channel-archives は Genius 自身の Tier 1 ingest 元であり、送った内容が
+  次回 ingest で public 側へ環流する」ことだった。**この根拠は `genius` チャンネルには
+  当てはまらない**:
+
+  - `genius` は Discord の **meta カテゴリ**配下に作られる (`ensureDiscordLayout`)。
+  - Concordia の `archiveStaleChannels` は **sessions / archive カテゴリ配下のみ**を
+    channel-archives へ書き出す (`targetCategories`)。meta カテゴリは対象外。
+  - よって `genius` の内容はアーカイブされず、Genius の `channelArchivesDir` 経由の
+    Tier 1 ingest へ環流しない。
+
+  **この「環流しない」が sensitive を許せる唯一の根拠**なので、送り先チャンネルを
+  変えるとき / Concordia のアーカイブ対象カテゴリを広げるときは、必ずこの前提を
+  再検証すること。実装側も `SENSITIVE_ALLOWED_CHANNEL` で番人を残してある。
+- 送信ペイロードには**質問文と context のみ**を含め、カード本文・sourceRef・絶対パス・
+  query_log の生テキストは載せない (この制約は方針変更後も維持する)。
+- 残る露出: sensitive な質問文そのものは loopback を出て Discord 上に載る (§0 のとおり
+  質問文には元の場面が含まれうる)。環流とは別の論点として neco が受容した上での運用。
+- public 限定にしていた頃は sensitive が配信されずキューに滞留し、`questions.maxOpen` を
+  埋めて**新規生成ごと止めていた** (2026-09-03 実測: open 20/20 のうち 16 件が sensitive、
+  17 件が一度も配信されていない)。visibility で配信対象を絞るのをやめることで解消する。
 - Discord 経路が無効 (`notify.concordiaBaseUrl` が null、または
   `questions.discordEnabled` が false) の場合は WebUI のみで動く。
   起動時に「Discord 質問は無効」と 1 行出す (無言で片方だけ動かさない)。
@@ -227,7 +245,7 @@ queryLog.retentionDays       既定 30
 | Q3 | 穴の検出 5 系統 (矛盾は埋め込み近傍 + LLM 判定) | Q1, Q2 |
 | Q4 | 質問生成 (蒸留 backend + public 二重チェックゲート) + 上限制御 | Q2, Q3 |
 | Q5 | WebUI 質問キュー画面 (回答/却下/矛盾の勝敗選択→supersede・retire) + 質問系 API の `spec/interface/api.md` 追記 | Q4 + WebUI |
-| Q6 | Discord 経路 (Concordia chat 送信 + in_reply_to polling、public 限定) | Q4 |
+| Q6 | Discord 経路 (Concordia chat 送信 + in_reply_to polling、矛盾質問は除外) | Q4 |
 | Q7 | 回答 → カード化 (整形・sourceRef・矛盾の後始末) | Q5, Q6 |
 | Q8 | ingest 完了後の起動配線 + 通知 1 行追加 | Q4, operations.md §4 |
 

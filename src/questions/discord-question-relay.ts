@@ -17,7 +17,7 @@ export interface DiscordQuestionRelayOptions {
 }
 
 /**
- * Q6 — posts public questions to Discord and takes replies back in
+ * Q6 — posts eligible questions to the dedicated Genius channel and takes replies back in
  * (spec/feature/active-questioning.md §3.2).
  *
  * A reply is only accepted when it references the exact message a question was
@@ -48,7 +48,7 @@ export class DiscordQuestionRelay {
 
   async #publish(): Promise<number> {
     let asked = 0;
-    for (const question of this.#queue.listUnaskedPublic(this.#maxPerRun)) {
+    for (const question of this.#queue.listUnasked(this.#maxPerRun)) {
       try {
         const messageId = await this.#channel.ask(question);
         this.#queue.markAsked(question.id, messageId);

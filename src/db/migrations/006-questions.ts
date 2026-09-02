@@ -4,7 +4,7 @@ import type { Migration } from "./types.js";
  * 補完質問 (能動学習) の 3 テーブル (spec/feature/active-questioning.md §2.1)。
  *
  * - `questions`: 生成された質問。visibility はカードと同じ二重チェックゲートを
- *   通った値で、public のみ Discord へ出せる。
+ *   通った値。矛盾質問以外は専用の Genius channel へ出せる。
  * - `question_targets`: 質問の根拠 (カード / カードペア / query_log)。
  *   `UNIQUE (target_kind, target_id)` が「同じ対象を再質問しない」の実体。
  * - `question_answers`: 回答。1 質問に複数回答が付きうる。
