@@ -1,6 +1,7 @@
 import { ulid } from "ulid";
 import { z } from "zod";
 import type { GeniusDatabase } from "../db/database.js";
+import { decisionAuthorSchema } from "../domain/card.js";
 import {
   answeredViaSchema,
   canonicalCardPairId,
@@ -34,6 +35,7 @@ interface AnswerRow {
   question_id: string;
   text: string;
   answered_via: string;
+  answered_by: string | null;
   card_id: string | null;
   created_at: number;
 }
@@ -82,6 +84,8 @@ export interface ListQuestionsInput {
 }
 
 export interface RecordAnswerInput {
+  /** 誰の判断か。 同定できない経路は null (§4)。 */
+  answeredBy?: string | null;
   questionId: string;
   text: string;
   answeredVia: AnsweredVia;
@@ -198,12 +202,19 @@ export class QuestionQueueRepository {
   recordAnswer(input: RecordAnswerInput): QuestionAnswerRecord {
     const text = answerTextSchema.parse(input.text);
     const answeredVia = answeredViaSchema.parse(input.answeredVia);
+    const answeredBy = input.answeredBy === null || input.answeredBy === undefined
+      ? null
+      : decisionAuthorSchema.parse(input.answeredBy);
     return this.#database.transaction(() => {
       const status = this.#requireStatus(input.questionId);
       if (status !== "open") throw new QuestionNotOpenError(input.questionId, status);
       const pending = this.#pendingAnswer(input.questionId);
       if (pending !== undefined) {
-        if (pending.text !== text || pending.answered_via !== answeredVia) {
+        if (
+          pending.text !== text
+          || pending.answered_via !== answeredVia
+          || pending.answered_by !== answeredBy
+        ) {
           throw new QuestionAnswerPendingError(input.questionId);
         }
         return hydrateAnswer(pending);
@@ -213,15 +224,23 @@ export class QuestionQueueRepository {
         questionId: input.questionId,
         text,
         answeredVia,
+        answeredBy,
         cardId: null,
         createdAt: this.#clock(),
       };
       this.#database
         .prepare(
-          `INSERT INTO question_answers(id, question_id, text, answered_via, card_id, created_at)
-           VALUES (?, ?, ?, ?, NULL, ?)`,
+          `INSERT INTO question_answers(id, question_id, text, answered_via, answered_by, card_id, created_at)
+           VALUES (?, ?, ?, ?, ?, NULL, ?)`,
         )
-        .run(record.id, record.questionId, record.text, record.answeredVia, record.createdAt);
+        .run(
+          record.id,
+          record.questionId,
+          record.text,
+          record.answeredVia,
+          record.answeredBy,
+          record.createdAt,
+        );
       return record;
     }).immediate();
   }
@@ -345,6 +364,7 @@ function hydrateAnswer(row: AnswerRow): QuestionAnswerRecord {
     questionId: row.question_id,
     text: row.text,
     answeredVia: answeredViaSchema.parse(row.answered_via),
+    answeredBy: row.answered_by,
     cardId: row.card_id,
     createdAt: row.created_at,
   };

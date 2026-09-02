@@ -99,7 +99,8 @@ Discord へ出すのを public 判定の質問だけに限っていた。2026-09
   `card-context` は矛盾質問の表示根拠で重複可。それ以外は同じ対象を再質問しないため
   部分 UNIQUE index を張る。`category` はカードを持たないカテゴリー偏りの対象。
 - `question_answers`: `id` (TEXT PK), `question_id`, `text`,
-  `answered_via` (`ui|discord`), `card_id` (生成されたカード / NULL 可),
+  `answered_via` (`ui|discord`), `answered_by` (回答者 / NULL 可 — §4),
+  `card_id` (生成されたカード / NULL 可),
   `created_at`。1 質問に複数回答が付きうる (WebUI 修正・Discord の追記)。
 - 3 テーブルとも `spec/data/schema.md` に列表を追記する (スキーマ正本を
   片側だけ更新しない)。
@@ -188,6 +189,29 @@ Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-DISCORD`
 
 Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-ANSWER`
 
+### 4.0 判断者 (decider) — 誰の判断を採るか
+
+neco 指示 (2026-09-03): 「セッション登録者と判断回答者が違う場合は Genius としては
+不適切」。Genius は**特定の一人の判断のクローン**なので、別人の判断が混ざった
+カードはコーパスとして成立しない。
+
+- **ユーザー別に管理する**: `clone_cards.decided_by` / `question_answers.answered_by`
+  に判断者を記録し、誰の判断かで絞り込めるようにする (migration 010)。
+  コーパスの物理分割はしない — 識別できれば足りる。
+- **現状は neco 以外の判断を採らない**: `questions.deciderDiscordUserId` に設定した
+  1 人の返信だけを回答として取り込む。判定は Concordia が ingress で載せる
+  `metadata.discord_user_id` で行う。**表示名 (`author_label`) は本人が変えられるので
+  使わない**。
+- 判断者以外の返信・投稿者を同定できない返信は**取り込まず warn を出す**。黙って
+  捨てると、答えた側が「反映された」と誤解する。
+- `deciderDiscordUserId` 未設定なら **Discord からの回答取り込みを行わない**
+  (質問の配信は続ける)。起動時に 1 行出す。誰の判断か決まらないまま取り込むより、
+  取り込まない方が安全 (無言で片方だけ動かさない)。
+- 既存行は backfill しない。判断者不明のまま残す — 分からないものを誰かの判断だと
+  決めつけない。
+
+### 4.1 カード化
+
 - 回答は既存の手動カード経路 (`POST /api/clone/cards` 相当のサービス) で
   `sourceRef: interview:<questionId>#<answerId>`、`confidence: 1.0`、category は
   質問の category、象限は質問の象限を継承して保存する。検索側の実装変更は不要。
@@ -230,6 +254,7 @@ questions.maxOpen            既定 20
 questions.lowConfidenceBelow 既定 0.5
 questions.retrievalMissBelow  既定 0.5
 questions.discordEnabled     既定 true (notify.concordiaBaseUrl が null なら無効)
+questions.deciderDiscordUserId 既定 null (未設定なら Discord 回答を取り込まない — §4.0)
 contradiction.situationSimilarityMin  既定 0.85
 contradiction.judgmentSimilarityMax   既定 0.5
 queryLog.enabled             既定 true

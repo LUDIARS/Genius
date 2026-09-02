@@ -67,6 +67,12 @@ export interface QuestionsConfig {
   retrievalMissBelow: number;
   /** notify.concordiaBaseUrl が null なら実質無効 (起動時に 1 行明示する)。 */
   discordEnabled: boolean;
+  /**
+   * 判断者の Discord user id。 この人の返信だけを回答として採る。
+   * null = 未設定。 Discord からの回答取り込みを止める (起動時に 1 行明示する) —
+   * 誰の判断か決まらないまま取り込むと、別人の判断がクローンへ混ざるため。
+   */
+  deciderDiscordUserId: string | null;
 }
 
 export interface ContradictionConfig {

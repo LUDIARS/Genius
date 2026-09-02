@@ -46,6 +46,7 @@ class FakeCardGateway implements DistillationCardGateway {
     const card = {
       ...input,
       id: `01TEST${this.saved.length}`,
+      decidedBy: input.decidedBy ?? null,
       supersededBy: null,
       retiredAt: null,
       createdAt: 1,
@@ -288,6 +289,7 @@ function cloneCard(value: DistilledCard, id: string): CloneCard {
     id,
     sourceRef: "memory:old.md#card-001",
     sourceTier: 1,
+    decidedBy: null,
     supersededBy: null,
     retiredAt: null,
     createdAt: 1,

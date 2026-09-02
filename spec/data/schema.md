@@ -18,6 +18,7 @@ DB: `data/genius.db` (better-sqlite3, WAL)。migration は番号連番 + 冪等
 | source_ref | TEXT | 出典追跡子 (`<reader>:<path or id>#<anchor>`) |
 | source_tier | INTEGER | 1 \| 2 |
 | confidence | REAL | 蒸留 LLM の自信 0..1 |
+| decided_by | TEXT NULL | 最終判断者 (Discord user id 等、1..64)。NULL = 判断者不明 (蒸留由来、または話者を同定できない経路)。Genius は特定の一人の判断のクローンなので、誰の判断かで絞り込めるようにする。backfill しない — 不明を誰かの判断だと決めつけない |
 | superseded_by | TEXT NULL | 統合/更新先カード id (削除の代替) |
 | retired_at | INTEGER NULL | 置換先なしで非活性化した時刻 (epoch ms)。NULL = 非 retire。`superseded_by` とは独立で、どちらか片方でも「活性」から外れる |
 | retired_reason | TEXT NULL | `feedback` = 評価による自動 retire。NULL = 手動または由来不明 |
@@ -25,6 +26,7 @@ DB: `data/genius.db` (better-sqlite3, WAL)。migration は番号連番 + 冪等
 | created_at / updated_at | INTEGER | epoch ms |
 
 インデックス: `(domain, visibility)`, `(superseded_by)`, `(category)`,
+`(decided_by) WHERE decided_by IS NOT NULL`,
 `(retired_at) WHERE retired_at IS NOT NULL` (部分索引 — 活性判定は
 `retired_at IS NULL` 側でほぼ全行に一致し索引の利得がないため、retire 済みだけを
 索引する), `UNIQUE (source_ref)`。
@@ -174,7 +176,7 @@ rating 別の件数だけとする。
 
 インデックス: `(card_id, created_at)`。
 
-## questions / question_targets / question_answers — 補完質問 (migration 006 + 007)
+## questions / question_targets / question_answers — 補完質問 (migration 006 + 007 + 010)
 
 能動学習の質問キュー (spec/feature/active-questioning.md §2.1)。統制語彙
 (gap_kind / status / target_kind / answered_via) は CHECK で fail-fast。
@@ -217,6 +219,7 @@ rating 別の件数だけとする。
 | question_id | TEXT | `questions` 参照 |
 | text | TEXT | 元の回答文 (整形前を残す) |
 | answered_via | TEXT | `ui` / `discord` |
+| answered_by | TEXT NULL | 回答者 (Discord user id 等、1..64)。NULL = 同定できない経路。生成カードの `decided_by` になる (migration 010) |
 | card_id | TEXT NULL | 回答から生成されたカード |
 | created_at | INTEGER | epoch ms |
 
@@ -236,8 +239,9 @@ SHA-256・model・format version とベクトルだけを保持する。カー�
 | embedding cache | derived | 判断カード | ローカル SQLite | 必要 | 原文を保存せず hash と vector のみ |
 | query_log | user | Genius | ローカル SQLite | 必要 | loopback のみ。公開 export 禁止・カード DTO に出さない・保持期間付き (既定 30 日) |
 | card_feedback | user | Genius | ローカル SQLite | 必要 | loopback / アクセス制御済み front door のみ。note/source は公開 export・カード DTO 禁止。DTO は集計のみ |
-| questions / answers | user | Genius | ローカル SQLite | 必要 | loopback のみ。public 判定の質問だけ Discord へ送出可 |
+| questions / answers | user | Genius | ローカル SQLite | 必要 | loopback のみ。専用 Genius channel へ送出可。回答者の Discord user id は判断の帰属にだけ使用し、ログ・公開 export へ出さない |
 
 カード本文は neco 個人の判断記録であり、この DB 自体がローカル限定の個人
-ストア (Cernere の単一情報源ルールの対象外 — 氏名/email/認証情報は扱わない。
+ストア (Cernere の単一情報源ルールの対象外 — 氏名/email/認証情報は扱わず、
+判断帰属用の Discord user id だけを保持する。
 万一ソースに含まれても蒸留時にカードへ**転記しない**ことをプロンプトで指示)。

@@ -38,10 +38,16 @@ describe("CardRepository", () => {
   afterEach(() => database.close());
 
   it("creates and maps a card without losing JSON tags", () => {
-    const created = repository.create(input());
+    const created = repository.create(input({ decidedBy: "  user-123  " }));
 
     expect(repository.getById(created.id)).toEqual(created);
+    expect(created.decidedBy).toBe("user-123");
     expect(repository.count()).toBe(1);
+  });
+
+  it("rejects an invalid decision author before writing", () => {
+    expect(() => repository.create(input({ decidedBy: "x".repeat(65) }))).toThrow();
+    expect(repository.count()).toBe(0);
   });
 
   it("updates validated fields without deleting history", () => {

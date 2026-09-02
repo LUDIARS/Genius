@@ -281,6 +281,39 @@ describe("answer to card (Q7)", () => {
     expect(queue.get(id)?.answers).toHaveLength(1);
   });
 
+  it("keeps the saved answer author stable across retries", async () => {
+    const db = database();
+    const cards = new RecordingCards(db);
+    const { questions, queue, llm } = serviceFor(db, cards);
+    const id = seedQuestion(db);
+    llm.failuresRemaining = 1;
+
+    await expect(questions.answer({
+      questionId: id,
+      text: "Keep the attributed answer",
+      answeredVia: "discord",
+      answeredBy: "user-a",
+    })).rejects.toThrow("temporary shaping failure");
+
+    await expect(questions.answer({
+      questionId: id,
+      text: "Keep the attributed answer",
+      answeredVia: "discord",
+      answeredBy: "user-b",
+    })).rejects.toThrow(QuestionAnswerPendingError);
+
+    const result = await questions.answer({
+      questionId: id,
+      text: "Keep the attributed answer",
+      answeredVia: "discord",
+      answeredBy: "user-a",
+    });
+
+    expect(result.answer.answeredBy).toBe("user-a");
+    expect(cards.created[0]).toMatchObject({ decidedBy: "user-a" });
+    expect(queue.get(id)?.answers).toHaveLength(1);
+  });
+
   it("reuses the saved answer when card creation fails after shaping", async () => {
     const db = database();
     const cards = new RecordingCards(db);

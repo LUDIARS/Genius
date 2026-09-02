@@ -10,6 +10,8 @@ export const visibilitySchema = z.enum(["public", "sensitive"]);
 export const cardTextSchema = z.string().trim().min(1).max(MAX_CARD_TEXT_LENGTH);
 export const cardTagSchema = z.string().trim().min(1).max(MAX_CARD_TAG_LENGTH);
 export const cardTagsSchema = z.array(cardTagSchema).max(MAX_CARD_TAG_COUNT);
+/** Stable identifier for the person whose judgment an answer/card records. */
+export const decisionAuthorSchema = z.string().trim().min(1).max(64);
 
 export type CardDomain = z.infer<typeof domainSchema>;
 export type CardVisibility = z.infer<typeof visibilitySchema>;
@@ -33,6 +35,12 @@ export interface CloneCard extends DistilledCard {
   id: string;
   sourceRef: string;
   sourceTier: 1 | 2;
+  /**
+   * 最終判断者 (Discord user id 等)。null = 判断者不明 (蒸留由来の既存カードや、
+   * 話者を同定できない経路からの回答)。Genius は特定の一人の判断のクローンなので、
+   * 誰の判断かで絞り込めるようにしておく (spec/feature/active-questioning.md §4)。
+   */
+  decidedBy: string | null;
   supersededBy: string | null;
   /**
    * Retirement timestamp (epoch ms) for a card deactivated without a
@@ -51,6 +59,8 @@ export interface ScoredCloneCard extends CloneCard {
 export interface CreateCardInput extends DistilledCard {
   sourceRef: string;
   sourceTier: 1 | 2;
+  /** 最終判断者。省略時は判断者不明 (null) として保存する。 */
+  decidedBy?: string | null;
 }
 
 /** Caller identity recorded with card revisions (no authentication exists). */

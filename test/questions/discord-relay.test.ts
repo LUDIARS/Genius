@@ -100,7 +100,7 @@ describe("Concordia question channel (Q6)", () => {
   it("drops replies without in_reply_to and Genius' own messages", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({
       messages: [
-        { id: 1, channel: "genius", author_label: "neco", ts: 5, text: "answer", in_reply_to: 4321 },
+        { id: 1, channel: "genius", author_label: "neco", ts: 5, text: "answer", in_reply_to: 4321, metadata: { discord_user_id: "U-neco" } },
         { id: 2, channel: "genius", author_label: "neco", ts: 6, text: "unrelated", in_reply_to: null },
         { id: 3, channel: "genius", author_label: "Genius", ts: 7, text: "own", in_reply_to: 4321 },
       ],
@@ -110,6 +110,7 @@ describe("Concordia question channel (Q6)", () => {
     const replies = await channel.replies(4);
 
     expect(replies.map((reply) => reply.id)).toEqual([1]);
+    expect(replies[0]?.metadata?.discord_user_id).toBe("U-neco");
     const [url] = fetchMock.mock.calls[0] as unknown as [URL];
     expect(url.searchParams.get("channel")).toBe("genius");
     expect(url.searchParams.get("since")).toBe("4");
@@ -139,7 +140,7 @@ describe("Concordia question channel (Q6)", () => {
 describe("Discord question relay (Q6)", () => {
   it("posts unasked questions and applies replies to the matching question", async () => {
     const asked: { id: string; messageId: string }[] = [];
-    const answered: { questionId: string; answeredVia: string; text: string }[] = [];
+    const answered: { questionId: string; answeredVia: string; text: string; answeredBy?: string }[] = [];
     const replySince: number[] = [];
     const queue = {
       listUnasked: () => [entry()],
@@ -148,7 +149,7 @@ describe("Discord question relay (Q6)", () => {
       findByDiscordMessageId: (id: string) => (id === "4321" ? entry({ discordMessageId: "4321" }) : null),
     } as unknown as QuestionQueueRepository;
     const answers = {
-      answer: async (input: { questionId: string; answeredVia: string; text: string }) => {
+      answer: async (input: { questionId: string; answeredVia: string; text: string; answeredBy?: string }) => {
         answered.push(input);
         return {} as never;
       },
@@ -158,21 +159,120 @@ describe("Discord question relay (Q6)", () => {
       replies: async (since: number) => {
         replySince.push(since);
         return [
-          { id: 1, author_label: "neco", ts: 11, text: "こう判断する", in_reply_to: 4321 },
-          { id: 2, author_label: "neco", ts: 12, text: "別スレッド", in_reply_to: 9999 },
+          { id: 1, author_label: "neco", ts: 11, text: "こう判断する", in_reply_to: 4321, metadata: { discord_user_id: "U-neco" } },
+          { id: 2, author_label: "neco", ts: 12, text: "別スレッド", in_reply_to: 9999, metadata: { discord_user_id: "U-neco" } },
         ];
       },
     } as unknown as ConcordiaQuestionChannel;
 
-    const result = await new DiscordQuestionRelay({ answers, channel, queue, maxPerRun: 5 }).run();
+    const result = await new DiscordQuestionRelay({ answers, channel, queue, maxPerRun: 5, deciderDiscordUserId: "U-neco" }).run();
 
     expect(result).toEqual({ asked: 1, answered: 1 });
     expect(asked).toEqual([{ id: "Q1", messageId: "4321" }]);
     expect(replySince).toEqual([10]);
     // The reply to an unknown message id is left alone.
     expect(answered).toEqual([
-      { questionId: "Q1", answeredVia: "discord", text: "こう判断する" },
+      { questionId: "Q1", answeredVia: "discord", text: "こう判断する", answeredBy: "U-neco" },
     ]);
+  });
+
+  /** 回答取り込みだけを見るための最小構成。返信の投稿者だけ差し替える。 */
+  function collectOnlyRelay(options: {
+    deciderDiscordUserId: string | null;
+    replyAuthorId?: string;
+    answered: unknown[];
+    warnings: string[];
+  }) {
+    const queue = {
+      listUnasked: () => [],
+      markAsked: () => {},
+      earliestOutstandingAskedAt: () => 10_500,
+      findByDiscordMessageId: (id: string) => (id === "4321" ? entry({ discordMessageId: "4321" }) : null),
+    } as unknown as QuestionQueueRepository;
+    const answers = {
+      answer: async (input: unknown) => {
+        options.answered.push(input);
+        return {} as never;
+      },
+    } as unknown as QuestionAnswerService;
+    const channel = {
+      ask: async () => "4321",
+      replies: async () => [{
+        id: 1,
+        author_label: "誰か",
+        ts: 11,
+        text: "こう判断する",
+        in_reply_to: 4321,
+        ...(options.replyAuthorId === undefined
+          ? {}
+          : { metadata: { discord_user_id: options.replyAuthorId } }),
+      }],
+    } as unknown as ConcordiaQuestionChannel;
+    return new DiscordQuestionRelay({
+      answers,
+      channel,
+      queue,
+      maxPerRun: 5,
+      deciderDiscordUserId: options.deciderDiscordUserId,
+      warningSink: (message) => options.warnings.push(message),
+    });
+  }
+
+  it("records who decided, so the card carries its author", async () => {
+    const answered: Array<{ answeredBy?: string }> = [];
+    const warnings: string[] = [];
+    const relay = collectOnlyRelay({
+      deciderDiscordUserId: "U-neco",
+      replyAuthorId: "U-neco",
+      answered,
+      warnings,
+    });
+
+    await expect(relay.run()).resolves.toEqual({ asked: 0, answered: 1 });
+    expect(answered[0]?.answeredBy).toBe("U-neco");
+  });
+
+  it("ignores an answer from someone other than the decider", async () => {
+    // Genius は特定の一人の判断のクローンなので、別人の判断を取り込むと汚れる。
+    const answered: unknown[] = [];
+    const warnings: string[] = [];
+    const relay = collectOnlyRelay({
+      deciderDiscordUserId: "U-neco",
+      replyAuthorId: "U-someone-else",
+      answered,
+      warnings,
+    });
+
+    await expect(relay.run()).resolves.toEqual({ asked: 0, answered: 0 });
+    expect(answered).toEqual([]);
+    // 黙って捨てない — 答えた側が「反映された」と誤解しないように残す。
+    expect(warnings.join(" ")).toContain("non-decider");
+    expect(warnings.join(" ")).not.toContain("U-someone-else");
+  });
+
+  it("ignores a reply whose author cannot be identified", async () => {
+    const answered: unknown[] = [];
+    const warnings: string[] = [];
+    const relay = collectOnlyRelay({ deciderDiscordUserId: "U-neco", answered, warnings });
+
+    await expect(relay.run()).resolves.toEqual({ asked: 0, answered: 0 });
+    expect(answered).toEqual([]);
+    expect(warnings.join(" ")).toContain("unidentified author");
+  });
+
+  it("ingests nothing while the decider is unconfigured", async () => {
+    const answered: unknown[] = [];
+    const warnings: string[] = [];
+    const relay = collectOnlyRelay({
+      deciderDiscordUserId: null,
+      replyAuthorId: "U-neco",
+      answered,
+      warnings,
+    });
+
+    await expect(relay.run()).resolves.toEqual({ asked: 0, answered: 0 });
+    expect(answered).toEqual([]);
+    expect(warnings.join(" ")).toContain("deciderDiscordUserId is unset");
   });
 
   it("keeps going when one question fails to post", async () => {
@@ -195,6 +295,7 @@ describe("Discord question relay (Q6)", () => {
       channel,
       queue,
       maxPerRun: 5,
+      deciderDiscordUserId: "U-neco",
       warningSink: (message) => warnings.push(message),
     }).run();
 

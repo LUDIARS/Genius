@@ -27,7 +27,8 @@
     "maxOpen": 20,
     "lowConfidenceBelow": 0.5,
     "retrievalMissBelow": 0.5,
-    "discordEnabled": true
+    "discordEnabled": true,
+    "deciderDiscordUserId": null
   },
   "contradiction": {
     "situationSimilarityMin": 0.85,

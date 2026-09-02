@@ -74,6 +74,11 @@ export interface QuestionAnswerRecord {
   questionId: string;
   text: string;
   answeredVia: AnsweredVia;
+  /**
+   * 誰の判断か (Discord user id 等)。null = 同定できなかった経路の回答。
+   * Genius は特定の一人のクローンなので、判断の出所を残しておく (§4)。
+   */
+  answeredBy: string | null;
   /** Card distilled from this answer, or null while none was created. */
   cardId: string | null;
   createdAt: number;

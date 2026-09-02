@@ -241,10 +241,18 @@ function createQuestionRelay(
     );
     return null;
   }
+  if (config.questions.deciderDiscordUserId === null) {
+    // 質問の配信は続けるが、回答は取り込まない。 判断者が決まらないまま取り込むと
+    // 別人の判断がクローンへ混ざる (§4)。 無言で片方だけ動かさないので 1 行出す。
+    process.stderr.write(
+      "[questions] questions.deciderDiscordUserId is unset; questions are posted but Discord answers are not ingested\n",
+    );
+  }
   return new DiscordQuestionRelay({
     answers,
     channel: new ConcordiaQuestionChannel({ baseUrl: config.notify.concordiaBaseUrl }),
     maxPerRun: config.questions.maxPerRun,
+    deciderDiscordUserId: config.questions.deciderDiscordUserId,
     queue,
   });
 }

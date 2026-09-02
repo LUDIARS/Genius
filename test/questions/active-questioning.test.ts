@@ -77,6 +77,7 @@ describe("active questioning Q3+Q4", () => {
         enabled: true,
         maxPerRun: 1,
         maxOpen: 1,
+        deciderDiscordUserId: null,
         lowConfidenceBelow: 0.5,
         retrievalMissBelow: 0.5,
         discordEnabled: true,

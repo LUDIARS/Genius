@@ -87,6 +87,10 @@ const configSchema = z
         lowConfidenceBelow: z.number().gt(0).lt(1).default(0.5),
         retrievalMissBelow: z.number().gt(0).lt(1).default(0.5),
         discordEnabled: z.boolean().default(true),
+        // 判断者 (Discord user id)。 Genius は特定の一人の判断のクローンなので、
+        // 誰の回答を採るかを決めずに取り込むとコーパスが汚れる。 未設定 (null) なら
+        // Discord からの回答取り込みを行わない (§4)。 推測して埋めない。
+        deciderDiscordUserId: z.string().trim().min(1).max(64).nullable().default(null),
       })
       .strict()
       .optional()
@@ -97,6 +101,7 @@ const configSchema = z
         lowConfidenceBelow: 0.5,
         retrievalMissBelow: 0.5,
         discordEnabled: true,
+        deciderDiscordUserId: null,
       }),
     contradiction: z
       .object({

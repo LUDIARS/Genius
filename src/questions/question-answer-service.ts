@@ -48,6 +48,12 @@ export interface AnswerQuestionInput {
   text: string;
   answeredVia: AnsweredVia;
   /**
+   * 誰の判断か (Discord user id 等)。 生成カードの `decidedBy` になる。
+   * WebUI のように話者を同定できない経路は省略でき、その場合は「判断者不明」として
+   * 残す — 分からないものを誰かの判断だと決めつけない (§4)。
+   */
+  answeredBy?: string;
+  /**
    * Winning card of a contradiction pair. The other card of the pair is
    * superseded by the card this answer produces (§3.1).
    */
@@ -114,6 +120,7 @@ export class QuestionAnswerService {
       questionId: question.id,
       text: input.text,
       answeredVia: input.answeredVia,
+      answeredBy: input.answeredBy ?? null,
     });
     const supersedeTargetId = await this.#resolveSupersedeTarget(
       question,
@@ -134,6 +141,8 @@ export class QuestionAnswerService {
       confidence: 1,
       sourceRef: `interview:${question.id}#${answer.id}`,
       sourceTier: 1,
+      // 最終判断者でカードを登録する (§4)。同定できなければ null のまま残す。
+      decidedBy: answer.answeredBy,
     });
     const supersededCardId = supersedeTargetId === null
       ? null

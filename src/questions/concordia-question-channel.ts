@@ -31,6 +31,15 @@ const chatMessageSchema = z.object({
   ts: z.number(),
   text: z.string(),
   in_reply_to: z.number().int().positive().nullable(),
+  /**
+   * Concordia が ingress で載せる出自情報。 Discord 由来なら
+   * `discord_user_id` が入る (Concordia `src/discord/ingress.ts`)。
+   * 判断者の同定に使う唯一の安定した鍵 — author_label は表示名なので当てにしない。
+   */
+  metadata: z.object({ discord_user_id: z.string().min(1).optional() })
+    .loose()
+    .nullable()
+    .optional(),
 }).loose();
 
 const postResponseSchema = z.object({ message: chatMessageSchema });
@@ -185,6 +194,18 @@ export class ConcordiaQuestionChannel {
       });
     }
   }
+}
+
+/**
+ * 返信の投稿者を Discord user id で同定する (取れなければ null)。
+ *
+ * 表示名 (`author_label`) は本人が変えられるので判断者の判定には使わない。
+ * id が取れない返信は「誰の判断か確定できない」ものとして扱う。
+ *
+ * @implements SPEC-GENIUS-ACTIVE-QUESTION-ANSWER
+ */
+export function replyAuthorDiscordUserId(message: ConcordiaChatMessage): string | null {
+  return message.metadata?.discord_user_id ?? null;
 }
 
 /** @implements SPEC-GENIUS-ACTIVE-QUESTION-DISCORD */

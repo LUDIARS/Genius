@@ -211,6 +211,7 @@ describe("loadConfig", () => {
       lowConfidenceBelow: 0.5,
       retrievalMissBelow: 0.5,
       discordEnabled: true,
+      deciderDiscordUserId: null,
     });
     expect(config.contradiction).toEqual({
       situationSimilarityMin: 0.85,

@@ -61,6 +61,7 @@ describe("database migrations", () => {
         "idx_clone_cards_superseded_by",
         "idx_clone_cards_category",
         "idx_clone_cards_retired_at",
+        "idx_clone_cards_decided_by",
         "idx_clone_card_revisions_card_id",
         "idx_query_log_created_at",
         "idx_questions_status",
@@ -79,6 +80,12 @@ describe("database migrations", () => {
     expect(cardColumns).toContain("retired_at");
     expect(cardColumns).toContain("retired_reason");
     expect(cardColumns).toContain("feedback_reset_at");
+    expect(cardColumns).toContain("decided_by");
+    const answerColumns = database
+      .prepare<[], { name: string }>("PRAGMA table_info('question_answers')")
+      .all()
+      .map((column) => column.name);
+    expect(answerColumns).toContain("answered_by");
     const cacheColumns = database
       .prepare<[], { name: string }>("PRAGMA table_info('embedding_cache')")
       .all()
@@ -130,7 +137,7 @@ describe("database migrations", () => {
         .get("issue-discovery")?.count,
     ).toBe(0);
 
-    expect(runMigrations(database)).toEqual([9]);
+    expect(runMigrations(database)).toEqual([9, 10]);
     expect(
       database
         .prepare<[string], { name: string; description: string }>(
@@ -150,6 +157,37 @@ describe("database migrations", () => {
         )
         .get("issue-discovery")?.count,
     ).toBe(1);
+  });
+
+  it("adds nullable, bounded decision authors without attributing existing rows", () => {
+    const database = openDatabase(":memory:");
+    databases.push(database);
+    expect(runMigrations(
+      database,
+      MIGRATIONS.filter((migration) => migration.version <= 9),
+    )).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    database.exec(`
+      INSERT INTO clone_cards(
+        id, domain, visibility, category, situation, judgment, rationale, tags,
+        source_ref, source_tier, confidence, superseded_by, retired_at, created_at, updated_at
+      ) VALUES ('CARD1', 'work', 'sensitive', 'review', 's', 'j', 'r', '[]',
+        'fixture:card', 1, 1, NULL, NULL, 1, 1);
+      INSERT INTO questions(
+        id, question, context, category, domain, visibility, gap_kind, status, created_at
+      ) VALUES ('Q1', 'q', 'c', 'review', 'work', 'sensitive', 'low-confidence', 'open', 1);
+      INSERT INTO question_answers(id, question_id, text, answered_via, card_id, created_at)
+      VALUES ('A1', 'Q1', 'a', 'discord', NULL, 1);
+    `);
+
+    expect(runMigrations(database)).toEqual([10]);
+    expect(database.prepare("SELECT decided_by FROM clone_cards WHERE id = 'CARD1'").get())
+      .toEqual({ decided_by: null });
+    expect(database.prepare("SELECT answered_by FROM question_answers WHERE id = 'A1'").get())
+      .toEqual({ answered_by: null });
+    expect(() => database.prepare("UPDATE clone_cards SET decided_by = ? WHERE id = 'CARD1'")
+      .run("x".repeat(65))).toThrow();
+    expect(() => database.prepare("UPDATE question_answers SET answered_by = '' WHERE id = 'A1'")
+      .run()).toThrow();
   });
 
   it("rejects clone_cards writes whose category is outside card_categories", () => {

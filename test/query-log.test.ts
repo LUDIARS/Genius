@@ -35,6 +35,7 @@ function card(id: string): CloneCard {
     confidence: 0.5,
     sourceRef: `test:${id}`,
     sourceTier: 1,
+    decidedBy: null,
     supersededBy: null,
     retiredAt: null,
     createdAt: now,

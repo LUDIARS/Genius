@@ -16,6 +16,7 @@ function card(id: string): CloneCard {
     confidence: 0.9,
     sourceRef: `memory:${id}.md#x`,
     sourceTier: 1,
+    decidedBy: null,
     supersededBy: null,
     retiredAt: null,
     createdAt: 1,

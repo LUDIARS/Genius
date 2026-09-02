@@ -1,5 +1,6 @@
 import { ulid } from "ulid";
 import {
+  decisionAuthorSchema,
   distilledCardSchema,
   domainSchema,
   visibilitySchema,
@@ -79,14 +80,19 @@ function buildOrderBy(sort: CardSortField, order: CardSortOrder): string {
   return `${column} ${direction}, id ${direction}`;
 }
 
-function normalizeCreateInput(input: CreateCardInput): CreateCardInput {
+/** 戻りの `decidedBy` は必ず確定させる (CloneCard 側は必須列)。 */
+function normalizeCreateInput(input: CreateCardInput): CreateCardInput & { decidedBy: string | null } {
   const card = distilledCardSchema.parse(input);
   const sourceRef = input.sourceRef.trim();
   if (sourceRef === "") throw new Error("sourceRef must not be empty");
   if (input.sourceTier !== 1 && input.sourceTier !== 2) {
     throw new Error("sourceTier must be 1 or 2");
   }
-  return { ...card, sourceRef, sourceTier: input.sourceTier };
+  // 未指定は「判断者不明」。 undefined のまま通すと CloneCard の必須列が欠ける。
+  const decidedBy = input.decidedBy === null || input.decidedBy === undefined
+    ? null
+    : decisionAuthorSchema.parse(input.decidedBy);
+  return { ...card, sourceRef, sourceTier: input.sourceTier, decidedBy };
 }
 
 function assertCloneCard(card: CloneCard): CloneCard {
@@ -168,9 +174,9 @@ export class CardRepository {
       .prepare(
         `INSERT INTO clone_cards(
           id, domain, visibility, category, situation, judgment, rationale, tags,
-          source_ref, source_tier, confidence, superseded_by, retired_at,
+          source_ref, source_tier, confidence, decided_by, superseded_by, retired_at,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         normalized.id,
@@ -184,6 +190,7 @@ export class CardRepository {
         normalized.sourceRef,
         normalized.sourceTier,
         normalized.confidence,
+        normalized.decidedBy,
         normalized.supersededBy,
         normalized.retiredAt,
         normalized.createdAt,
@@ -200,7 +207,7 @@ export class CardRepository {
         `UPDATE clone_cards SET
           domain = ?, visibility = ?, category = ?, situation = ?, judgment = ?,
           rationale = ?, tags = ?, source_ref = ?, source_tier = ?, confidence = ?,
-          superseded_by = ?, retired_at = ?, created_at = ?, updated_at = ?
+          decided_by = ?, superseded_by = ?, retired_at = ?, created_at = ?, updated_at = ?
         WHERE id = ?`,
       )
       .run(
@@ -214,6 +221,7 @@ export class CardRepository {
         normalized.sourceRef,
         normalized.sourceTier,
         normalized.confidence,
+        normalized.decidedBy,
         normalized.supersededBy,
         normalized.retiredAt,
         normalized.createdAt,

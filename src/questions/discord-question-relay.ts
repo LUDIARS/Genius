@@ -1,4 +1,7 @@
-import type { ConcordiaQuestionChannel } from "./concordia-question-channel.js";
+import {
+  replyAuthorDiscordUserId,
+  type ConcordiaQuestionChannel,
+} from "./concordia-question-channel.js";
 import type { QuestionAnswerService } from "./question-answer-service.js";
 import type { QuestionQueueRepository } from "./question-queue-repository.js";
 
@@ -13,6 +16,11 @@ export interface DiscordQuestionRelayOptions {
   queue: QuestionQueueRepository;
   /** Questions posted per run. Defaults to the queue's own maxPerRun. */
   maxPerRun: number;
+  /**
+   * 判断者の Discord user id (`questions.deciderDiscordUserId`)。
+   * null = 未設定なら Discord からの回答は 1 件も取り込まない (§4)。
+   */
+  deciderDiscordUserId: string | null;
   warningSink?: (message: string) => void;
 }
 
@@ -31,6 +39,7 @@ export class DiscordQuestionRelay {
   readonly #channel: ConcordiaQuestionChannel;
   readonly #maxPerRun: number;
   readonly #queue: QuestionQueueRepository;
+  readonly #deciderDiscordUserId: string | null;
   readonly #warningSink: (message: string) => void;
 
   constructor(options: DiscordQuestionRelayOptions) {
@@ -38,6 +47,7 @@ export class DiscordQuestionRelay {
     this.#channel = options.channel;
     this.#maxPerRun = options.maxPerRun;
     this.#queue = options.queue;
+    this.#deciderDiscordUserId = options.deciderDiscordUserId;
     this.#warningSink = options.warningSink ?? ((message) => process.stderr.write(`${message}\n`));
   }
 
@@ -63,6 +73,14 @@ export class DiscordQuestionRelay {
   }
 
   async #collect(): Promise<number> {
+    // 判断者が決まっていない状態で取り込むと、誰の判断か分からないカードが
+    // クローンへ混ざる。 何も採らずに 1 行出して戻る (無言で片方だけ動かさない)。
+    if (this.#deciderDiscordUserId === null) {
+      this.#warningSink(
+        "[questions] questions.deciderDiscordUserId is unset; Discord answers are not ingested",
+      );
+      return 0;
+    }
     const earliestAskedAt = this.#queue.earliestOutstandingAskedAt();
     if (earliestAskedAt === null) return 0;
     let replies;
@@ -81,11 +99,25 @@ export class DiscordQuestionRelay {
       const question = this.#queue.findByDiscordMessageId(String(reply.in_reply_to));
       // Not one of ours, or already answered/dismissed elsewhere.
       if (question === null || question.status !== "open") continue;
+      // Genius は特定の一人の判断のクローンなので、別人の回答は取り込まない
+      // (2026-09-03 neco 指示: 判断回答者が違う場合は Genius としては不適切)。
+      // 捨てたことは warn で見えるようにする — 答えたのに黙って消えると、
+      // 回答者は「反映された」と誤解する。
+      const authorId = replyAuthorDiscordUserId(reply);
+      if (authorId !== this.#deciderDiscordUserId) {
+        this.#warningSink(
+          authorId === null
+            ? `[questions] ignored an answer to ${question.id} from an unidentified author`
+            : `[questions] ignored an answer to ${question.id} from a non-decider`,
+        );
+        continue;
+      }
       try {
         await this.#answers.answer({
           questionId: question.id,
           text: reply.text,
           answeredVia: "discord",
+          answeredBy: authorId,
         });
         answered += 1;
       } catch (error) {
