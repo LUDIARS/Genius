@@ -119,23 +119,32 @@ Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-QUEUE`
 
 Traceability ID: `SPEC-GENIUS-ACTIVE-QUESTION-DISCORD`
 
-Concordia の既存 chat API で完結する想定で、**Concordia 側の改修は不要**とする。
+当初は Concordia の既存 chat API で完結する想定で「Concordia 側の改修は不要」としていた。
 
-**2026-08-09 に Concordia 側の正本 (`src/api/chat.ts`) で確認済み**: 想定どおりで
-Concordia の改修は不要だった。確認できた点:
+**2026-09-03 に方針変更**: 質問を `consultation` (仕事の相談) と同じ面に出していたため、
+作業の相談と見分けがつかず「答えるまで進められない問い」に見えていた。Concordia 側に
+**Genius 専用の `genius` チャンネルを新設**し (LUDIARS/Concordia local PR #1234)、
+専用色 `0x9b59b6` を割り当てて面ごと分ける。以降 Genius の送受信先はこのチャンネル。
 
-- `POST /v1/chat` の `channel` enum に `consultation` が存在する。
+**反映順序**: Concordia を先に反映すること。`genius` を受けられない Concordia へ配ると
+`POST /v1/chat` が 400 になり質問が届かない (relay が warn を出すので無言では消えない)。
+
+**Concordia 側の正本 (`src/api/chat.ts`) で確認済み**: 2026-08-09 に既存 chat API の
+送受信契約を確認し、2026-09-03 に `genius` channel の追加を local PR #1234 で確認した。
+現行契約は次のとおり:
+
+- `POST /v1/chat` の `channel` enum に `genius` が存在する。
 - 応答は `{ "message": { id, channel, author_label, ts, text, in_reply_to, ... } }`。
 - **`id` は数値**。`questions.discord_message_id` は TEXT なので保存時に文字列化する。
 - `GET /v1/chat?channel=&since=&limit=` が `{ "messages": [...] }` を返し、各要素が
   `in_reply_to` (数値または null) を持つ。返信参照は取れるので Discord 経路を有効にできる。
 
 - 送信: `POST <notify.concordiaBaseUrl>/v1/chat`
-  (`channel: "consultation"`, `author_label: "Genius"`)。base URL は
+  (`channel: "genius"`, `author_label: "Genius"`)。base URL は
   `notify.concordiaBaseUrl` (operations.md §4 で追加した設定) から解決し、
   ホスト/ポート/URL をハードコードしない (CLAUDE.md)。返る message id を
   `discord_message_id` に保存。
-- 受信: `GET <notify.concordiaBaseUrl>/v1/chat?channel=consultation&since=<ts>` を
+- 受信: `GET <notify.concordiaBaseUrl>/v1/chat?channel=genius&since=<ts>` を
   polling し、`in_reply_to` が `discord_message_id` に一致するメッセージを回答として
   取り込む。`in_reply_to` 相当の返信参照が取れない場合は Discord 経路を有効にしない
   (誤ったメッセージを回答として取り込まない)。

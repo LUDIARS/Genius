@@ -5,8 +5,18 @@ import type { QuestionRecord } from "./types.js";
 /** Concordia /v1/chat の text 上限 (PostSchema.text max 2000)。 */
 const MAX_TEXT_LENGTH = 2000;
 const MAX_REPLY_MESSAGES = 200;
-/** 質問は相談として出す (Concordia の channel enum に存在する値)。 */
-const CHANNEL = "consultation";
+/**
+ * 補完質問は Genius 専用チャンネルへ出す (Concordia の channel enum の値)。
+ *
+ * 以前は `consultation` (仕事の相談) と同じ面に出していたが、作業の相談と
+ * 見分けがつかず「答えるまで進められない問い」に見えていた。Concordia 側で
+ * `genius` を新設し専用色を割り当てたので、面ごと分ける。
+ *
+ * **順序依存**: Concordia が `genius` を受けるようになる前にこちらを配ると、
+ * `POST /v1/chat` が 400 を返して質問が出せない (relay は warn を出して継続する
+ * ので黙って消えはしないが、質問は届かない)。Concordia を先に反映すること。
+ */
+const CHANNEL = "genius";
 const AUTHOR_LABEL = "Genius";
 
 /**

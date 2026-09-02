@@ -46,7 +46,7 @@ function jsonResponse(body: unknown): Response {
 
 describe("Concordia question channel (Q6)", () => {
   it("posts a public question and returns the message id as text", async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ message: { id: 4321, channel: "consultation", author_label: "Genius", ts: 1, text: "x", in_reply_to: null } }));
+    const fetchMock = vi.fn(async () => jsonResponse({ message: { id: 4321, channel: "genius", author_label: "Genius", ts: 1, text: "x", in_reply_to: null } }));
     const channel = new ConcordiaQuestionChannel({ baseUrl: BASE_URL, fetch: fetchMock as unknown as typeof fetch });
 
     const messageId = await channel.ask(question());
@@ -55,7 +55,7 @@ describe("Concordia question channel (Q6)", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
     expect(url.pathname).toBe("/v1/chat");
     const body = JSON.parse(String(init.body)) as { channel: string; author_label: string; text: string };
-    expect(body.channel).toBe("consultation");
+    expect(body.channel).toBe("genius");
     expect(body.author_label).toBe("Genius");
     expect(body.text).toContain("この場面ではどう判断しますか?");
   });
@@ -87,9 +87,9 @@ describe("Concordia question channel (Q6)", () => {
   it("drops replies without in_reply_to and Genius' own messages", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({
       messages: [
-        { id: 1, channel: "consultation", author_label: "neco", ts: 5, text: "answer", in_reply_to: 4321 },
-        { id: 2, channel: "consultation", author_label: "neco", ts: 6, text: "unrelated", in_reply_to: null },
-        { id: 3, channel: "consultation", author_label: "Genius", ts: 7, text: "own", in_reply_to: 4321 },
+        { id: 1, channel: "genius", author_label: "neco", ts: 5, text: "answer", in_reply_to: 4321 },
+        { id: 2, channel: "genius", author_label: "neco", ts: 6, text: "unrelated", in_reply_to: null },
+        { id: 3, channel: "genius", author_label: "Genius", ts: 7, text: "own", in_reply_to: 4321 },
       ],
     }));
     const channel = new ConcordiaQuestionChannel({ baseUrl: BASE_URL, fetch: fetchMock as unknown as typeof fetch });
@@ -98,7 +98,7 @@ describe("Concordia question channel (Q6)", () => {
 
     expect(replies.map((reply) => reply.id)).toEqual([1]);
     const [url] = fetchMock.mock.calls[0] as unknown as [URL];
-    expect(url.searchParams.get("channel")).toBe("consultation");
+    expect(url.searchParams.get("channel")).toBe("genius");
     expect(url.searchParams.get("since")).toBe("4");
   });
 
@@ -106,7 +106,7 @@ describe("Concordia question channel (Q6)", () => {
     const warnings: string[] = [];
     const messages = Array.from({ length: 200 }, (_, index) => ({
       id: index + 1,
-      channel: "consultation",
+      channel: "genius",
       author_label: "neco",
       ts: index + 1,
       text: "answer",
