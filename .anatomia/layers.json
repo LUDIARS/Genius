@@ -1,0 +1,49 @@
+{
+  "$comment": "Anatomia のプログラムドメイン (二層判定) 用の層宣言。 glob は repo 相対のファイルパスへ完全一致で当たる (`*` = 1 階層、 `**` = 任意階層)。 ローダーが glob 文字列でソートしてから先勝ちで評価するため記述順は効かない。 したがって glob 同士を重ねず、 モジュール 1 つにつき `<dir>/*` を 1 本だけ置く。 確認は `anatomia domains program --repo .` で unclassified 0 を保つこと。",
+
+  "layers": [
+    { "glob": "src/api/*", "layer": "presentation" },
+    { "glob": "src/api/middleware/*", "layer": "presentation" },
+    { "glob": "src/api/routes/*", "layer": "presentation" },
+    { "glob": "src/api/ui/*", "layer": "presentation" },
+    { "glob": "src/mcp/*", "layer": "presentation" },
+    { "glob": "ui/*", "layer": "presentation" },
+
+    { "glob": "hooks/*", "layer": "application" },
+    { "glob": "src/*", "layer": "application" },
+    { "glob": "src/runtime/*", "layer": "application" },
+    { "glob": "src/services/*", "layer": "application" },
+
+    { "glob": "src/cards/*", "layer": "domain-logic" },
+    { "glob": "src/categories/*", "layer": "domain-logic" },
+    { "glob": "src/config/*", "layer": "domain-logic" },
+    { "glob": "src/distill/*", "layer": "domain-logic" },
+    { "glob": "src/domain/*", "layer": "domain-logic" },
+    { "glob": "src/embedding/*", "layer": "domain-logic" },
+    { "glob": "src/eval/*", "layer": "domain-logic" },
+    { "glob": "src/feedback/*", "layer": "domain-logic" },
+    { "glob": "src/ingest/*", "layer": "domain-logic" },
+    { "glob": "src/query/*", "layer": "domain-logic" },
+    { "glob": "src/questions/*", "layer": "domain-logic" },
+    { "glob": "src/stats/*", "layer": "domain-logic" },
+
+    { "glob": "src/client/*", "layer": "infrastructure" },
+    { "glob": "src/db/*", "layer": "infrastructure" },
+    { "glob": "src/db/migrations/*", "layer": "infrastructure" },
+    { "glob": "src/readers/*", "layer": "infrastructure" },
+
+    { "glob": "vitest.config.ts", "layer": "shared" },
+    { "glob": "test/*", "layer": "shared" },
+    { "glob": "test/api/*", "layer": "shared" },
+    { "glob": "test/distill/*", "layer": "shared" },
+    { "glob": "test/fixtures/*", "layer": "shared" },
+    { "glob": "test/ingest/*", "layer": "shared" },
+    { "glob": "test/performance/*", "layer": "shared" },
+    { "glob": "test/questions/*", "layer": "shared" },
+    { "glob": "test/readers/*", "layer": "shared" },
+    { "glob": "test/runtime/*", "layer": "shared" },
+    { "glob": "test/services/*", "layer": "shared" }
+  ],
+
+  "mergeCouplingThreshold": 1
+}
