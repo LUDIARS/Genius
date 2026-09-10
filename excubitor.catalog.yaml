@@ -5,7 +5,7 @@ services:
     name: Genius (自分クローン判断カードDB)
     viewer:
       enabled: true
-      entry_path: /
+      entry_path: /ui/
     env:
       GENIUS_ALLOWED_ORIGINS: https://genius.ai-run-do.com,https://web.ai-run-do.com,https://exiv.ai-run-do.com
     tier: personal
