@@ -10,6 +10,7 @@ import { createQuadrantForm } from "./quadrant-form.js";
 import { createQuestionController } from "./question-controller.js";
 import { createRetireForm } from "./retire-form.js";
 import { createStatusBar } from "./status-bar.js";
+import { createStatsPanel } from "./stats-panel.js";
 import { createSupersedeForm } from "./supersede-form.js";
 import { el } from "./dom.js";
 
@@ -20,7 +21,8 @@ import { el } from "./dom.js";
  */
 export function createAppController() {
   const status = createStatusBar();
-  const statsLine = el("p", { className: "stats-line" });
+  const stats = createStatsPanel({ status });
+  const reloadStats = () => stats.refreshIfRequested();
   let filters = null;
   let offset = 0;
   let selectedId = null;
@@ -96,7 +98,7 @@ export function createAppController() {
   const element = el("div", { className: "layout" }, [
     el("header", { className: "app-header" }, [
       el("h1", { textContent: "Genius card review" }),
-      statsLine,
+      stats.element,
       status.element,
     ]),
     el("div", { className: "columns" }, [
@@ -115,10 +117,9 @@ export function createAppController() {
   /** @implements SPEC-UI-LAZY-LIST */
   async function start() {
     filters = filterPanel.read();
-    // The question queue is capped at maxOpen, so it is loaded up front; the
-    // card list is not (SPEC-UI-LAZY-LIST). The idle text above stays visible
-    // while this runs, and remains as the retry hint if the queue read fails.
-    await Promise.all([reloadCategories(), reloadStats(), questionController.start()]);
+    // Only the small category vocabulary loads automatically. Statistics scan
+    // the card database; questions create editable rows. Both are explicit.
+    await Promise.all([reloadCategories(), questionController.start()]);
     // The controls are usable while the header requests are in flight. Do not
     // overwrite a page that was explicitly requested during that interval.
     if (!listRequested) list.renderIdle();
@@ -133,20 +134,6 @@ export function createAppController() {
       categoryPanel.setCategories(body.categories);
     } catch (error) {
       status.failure("Failed to load categories", error);
-    }
-  }
-
-  async function reloadStats() {
-    try {
-      const stats = await api.getStats();
-      statsLine.textContent =
-        `${stats.total} cards · active ${stats.active} · superseded ${stats.superseded}`
-        + ` · retired ${stats.retired} · `
-        + Object.entries(stats.quadrants)
-          .map(([quadrant, count]) => `${quadrant} ${count}`)
-          .join(" · ");
-    } catch (error) {
-      status.failure("Failed to load stats", error);
     }
   }
 

@@ -56,7 +56,6 @@ export function createQuestionController({ status, onAnswerApplied, onSelectCard
     element: panel.element,
     async start() {
       panel.renderIdle();
-      await reload();
     },
   };
 }

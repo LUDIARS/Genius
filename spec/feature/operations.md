@@ -214,7 +214,9 @@ Traceability ID: `SPEC-GENIUS-HTTP-ORIGIN-BOUNDARY`
   - 一覧: 象限・カテゴリー・タグ・全文 (`q`) フィルタ、作成日/confidence ソート、
     supersede 済み / retire 済みの表示切替 (独立した 2 トグル)
   - **SPEC-UI-LAZY-LIST: 初回表示ではカードを取得しない** (neco 指示 2026-08-09)。ヘッダの件数
-    (`/api/clone/stats`) とカテゴリーだけを読み、一覧は「Apply を押すと読む」旨の
+    は「Load statistics」で明示取得する (2026-09-11 軽量化)。初回はカテゴリーだけを読み、
+    質問一覧も「Refresh」で取得する。読み取り通信は15秒でエラーを表示し再操作できる。
+    一覧は「Apply を押すと読む」旨の
     案内を出す。カードの取得は Apply 以降のみ。書き込みや選択の後の再読込も、
     一度でも Apply された後だけ行う (無言で一覧を読み始めない)。
   - 詳細: カード本文・sourceRef・supersede チェーンの表示

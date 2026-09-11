@@ -13,7 +13,11 @@ export class ApiError extends Error {
 }
 
 async function request(path, init = {}) {
-  const response = await fetch(path, init);
+  // Bound reads so a stalled backend leaves a visible retryable error. Writes
+  // keep their original semantics: a timeout must not imply a rejected write.
+  const read = !init.method || init.method === "GET";
+  const response = await fetch(path, read && !init.signal
+    ? { ...init, signal: AbortSignal.timeout(15_000) } : init);
   const body = await response.text();
   let payload = null;
   if (body !== "") {
