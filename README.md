@@ -1,511 +1,169 @@
-# Genius — 自分クローン判断カード DB
+<p align="center">
+  <img src="docs/assets/genius.svg" width="100" alt="Genius logo" />
+</p>
 
-Genius は、過去の作業記録から「この場面ならどう判断するか」を判断カード
-(場面・判断・理由) に蒸留し、Claude / Codex へ検索結果を供給するローカルサービスです。
-真の fine-tuning ではなく、関連する判断カードを top-k で注入する
-retrieval-conditioned judgment (擬似 FT) を採用します。
+# Genius
 
-- 四象限: `domain: work|hobby` × `visibility: public|sensitive`
-- HTTP: Hono、既定は loopback bind (`server.bindHost` で公開可)
-- DB: better-sqlite3 + sqlite-vec (`data/genius.db`、gitignore)
-- 埋め込み: ローカル Ollama `bge-m3`、1024 次元
-- 蒸留: `claude-cli` またはローカル Ollama
+過去の作業記録から **「この場面ならどう判断するか」** を引ける、自分クローン判断カード DB。
+
+<p align="center">
+  <a href="https://github.com/LUDIARS/Genius/actions"><img src="https://github.com/LUDIARS/Genius/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+</p>
+
+---
+
+ラテン語で **守護霊 / 生来の気質** を意味し、ローマで一人ひとりに付き添うとされた守護霊 Genius に由来する。
+真の fine-tuning はせず、判断カード (場面・判断・理由) を top-k で注入する
+**retrieval-conditioned judgment (擬似 FT)** で、AI エージェントに本人の判断傾向を持たせる。
+
+---
+
+## セットアップ
+
+設計の正本は [`spec/feature/clone-db.md`](spec/feature/clone-db.md)。
+
+設定・運用手順は用途別に [`spec/setup/`](spec/setup/) にまとめてある:
+
+- [本体を起動する](spec/setup/setup.md) / [CLI・MCP・hook・WebUI](spec/setup/clients.md) / [Ingest の運用](spec/setup/ingest.md) / [保守とトラブルシューティング](spec/setup/maintenance.md)
+- 全設定キー: [spec/setup/config-reference.md](spec/setup/config-reference.md)
+
+---
+
+## 解決する課題
+
+AI コーディングエージェント (Claude Code / Codex など) に作業を任せるとき、以下が起きる:
+
+1. **過去に下した判断を覚えていない** — 同じ論点で毎回聞き直すか、本人と違う判断をする
+2. **判断の根拠が作業記録に散らばっている** — memory・セッションログ・チャット・レビューを横断して引けない
+3. **個人的・機密な記録を外部に出したくない** — 埋め込みや検索を外部 API に任せられない
+
+Genius は作業記録を判断カードに蒸留し、ローカル埋め込みで検索できる 1 つの SQLite に集約する。
+エージェントには MCP / harness hook で関連カードだけを渡す。
+
+---
+
+## アーキテクチャ概観
+
+```
+┌──────────────────┐   read-only    ┌─────────────────────────────┐
+│ 作業記録 (Tier 1) ├──────────────►│ Genius (HTTP/Hono)          │
+│ memory / session │                │  - ingest (増分カーソル)     │
+│ logs / chat /    │                │  - 蒸留 claude-cli | ollama │
+│ review / Memoria │                │  - 埋め込み Ollama bge-m3   │
+└──────────────────┘                │  - 四象限 + sensitive ゲート │
+┌──────────────────┐                │                             │
+│ 生 JSONL (Tier 2)├──────────────►│  Backend: SQLite+sqlite-vec │
+│ Claude / Codex   │  夜間バッチ     │  Port: 4230 (loopback 既定) │
+└──────────────────┘                └──────┬──────────────────────┘
+┌──────────────────┐  genius_query (public) │
+│ Claude / Codex   │◄───────────────────────┤ MCP / harness hook
+└──────────────────┘                        │
+┌──────────────────┐  /ui/                  │
+│ 棚卸し WebUI      │◄───────────────────────┘
+└──────────────────┘
+```
+
+## 主機能
+
+| 機能 | 詳細 | 関連エンドポイント |
+|------|------|-------------------|
+| **F1. 判断カード検索** | ローカル embedding と sqlite-vec で top-k 検索。複数クエリは 1 回の Ollama 往復に集約 | `POST /api/clone/query`, `POST /api/clone/query-batch` |
+| **F2. Ingest (蒸留)** | 作業記録を読み取り専用で走査し、判断カードへ蒸留。非同期 run、増分カーソル。Tier 2 は明示指定 | `POST /api/clone/ingest/run`, `GET /api/clone/ingest/runs/:id` |
+| **F3. 失敗の隔離と再処理** | 1 文書の失敗で run を止めず `ingest_failures` に記録、`completed-with-errors` で終了。`--retry-failed` で再処理、失敗 run は Concordia へ通知 | `GET /api/clone/stats` |
+| **F4. 四象限と公開ゲート** | `domain: work\|hobby` × `visibility: public\|sensitive`。疑わしきは sensitive。sensitive→public 昇格はサーバ側で二重チェック | `PATCH /api/clone/cards/:id` |
+| **F5. カードのライフサイクル** | 物理削除せず、置換 (`supersededBy`) か置換先なしの retire (`retiredAt`) で非活性化。改訂履歴を記録 | `GET /api/clone/cards/:id/supersede-chain` |
+| **F6. 棚卸し WebUI** | 象限・カテゴリー・タグ・全文で絞り込み、編集・supersede・retire・手動追加 | `/ui/` |
+| **F7. エージェント供給** | MCP `genius_query` と UserPromptSubmit 用 harness hook。どちらも public 固定で `sourceRef`・内部 ID を返さない | `dist/mcp/server.js`, `hooks/` |
+| **F8. 公開 export** | active な public カードだけを `sourceRef` 抜きで出力 | `GET /api/clone/export?visibility=public` |
+
+死活は `GET /healthz` (生存のみ)、準備状態は `GET /readyz` (DB・Ollama・build 鮮度)。
+全エンドポイントの body / response は [`spec/interface/api.md`](spec/interface/api.md)。
+
+## 設計指針
+
+- **埋め込みは常にローカル**: 全象限とも Ollama のみ。外部 embedding URL は設定時に拒否する
+- **元データに触らない**: ソースリーダは読み取り専用。移動・更新・削除しない
+- **実データをコミットしない**: `data/`・`logs/`・`genius.config.json`・`eval/gold.jsonl` は gitignore。テストは合成フィクスチャのみ
+- **無言フォールバック禁止**: 設定不備・model 未 pull・backend 失敗は fail-fast。蒸留 backend の自動切替もしない
+- **ローカル運用**: loopback (127.0.0.1) bind、認証なし。公開する場合は前段でアクセス制御し、origin を完全一致で許可する
+- **LUDIARS スタック準拠**: TypeScript + Node 22 + Hono + better-sqlite3 + sqlite-vec、WebUI は素の HTML/CSS/ES modules
+
+---
 
 ## セキュリティ境界
 
-- 埋め込みは全象限ともローカル Ollama のみです。外部 embedding URL は設定時に拒否します。
-- 待ち受け先は `server.bindHost` (既定 `127.0.0.1`) です。Genius 自身は認証を持たない
-  ため、`0.0.0.0` を指定して公開する場合は、**前段でアクセス制御が済んでいること**が
-  前提になります (Cloudflare Tunnel + Access 等)。さらに Genius の listener へ前段を
-  迂回して直接到達できないよう、host firewall または container network で遮断してください。
-  公開 bind 時は起動ログに 1 行出ます。
-- ブラウザからのアクセスは loopback origin と `server.allowedOrigins` に**完全一致**で
-  列挙した origin だけが通ります。ワイルドカードやサブドメイン一致はありません。
-  この origin guard はブラウザ経由の攻撃対策であり、認証の代わりにはなりません。
-- クライアント (MCP / hook / eval) の接続先は従来どおり loopback のみです。
-- ソースリーダは読み取り専用です。元データを移動・更新・削除しません。
-- `data/`、`logs/`、`genius.config.json` はコミットしません。公開 export は
-  `visibility=public` の active カードだけを返し、`sourceRef` を含めません。
-- Claude / Codex へ接続する MCP と harness hook も public 固定で、`sourceRef`、内部 ID、
-  時刻を除く安全 DTO だけを返します。sensitive 検索は loopback HTTP API / ローカル CLI
-  の明示操作に限定します。
-- `claude-cli` 蒸留は Claude CLI の信頼境界へ原文を渡します。外部送信できない素材を
-  ingest する運用では、事前に `distill.backend` を `ollama` に切り替えてください。
-  Claude 実行時は tools・MCP・skills・session persistence を無効化します。backend の
-  自動フォールバックはありません。
+- 待ち受け先は `server.bindHost` (既定 `127.0.0.1`)。Genius 自身は認証を持たないため、
+  `0.0.0.0` で公開する場合は **前段でアクセス制御が済んでいること** が前提
+  (Cloudflare Tunnel + Access 等)。前段を迂回して listener へ直接届かないよう、
+  host firewall または container network で遮断する。公開 bind 時は起動ログに 1 行出る。
+- ブラウザからは loopback origin と `server.allowedOrigins` に **完全一致** で列挙した
+  origin だけが通る。ワイルドカードやサブドメイン一致は無い。これはブラウザ経由の
+  攻撃対策で、認証の代わりにはならない。
+- クライアント (MCP / hook / eval) の接続先は loopback のみ。
+- MCP と harness hook は public 固定で、`sourceRef`・内部 ID・時刻を除く安全 DTO だけを返す。
+  sensitive 検索は loopback HTTP API / ローカル CLI の明示操作に限る。
+- `claude-cli` 蒸留は Claude CLI の信頼境界へ原文を渡す。外部送信できない素材を
+  ingest する運用では、事前に `distill.backend` を `ollama` に切り替える。Claude 実行時は
+  tools・MCP・skills・session persistence を無効化する。
+
+---
 
 ## クイックスタート
 
-前提は Node.js 22+、npm、Ollama です。既定の蒸留 backend を使う場合は、
-認証済みの `claude` CLI も必要です。
+前提は Node.js 22+、npm、Ollama。既定の蒸留 backend を使う場合は認証済みの `claude` CLI も要る。
 
-```text
+### 1. インストール
+
+```bash
+git clone https://github.com/LUDIARS/Genius.git
+cd Genius
 ollama pull bge-m3
 npm ci --include=dev
+cp genius.config.example.json genius.config.json   # PowerShell: Copy-Item genius.config.example.json genius.config.json
 ```
 
-設定ファイルを作成します。PowerShell では次を使います。
+`genius.config.json` のソースパスをローカル環境に合わせて編集する
+(キーは [設定リファレンス](spec/setup/config-reference.md))。
 
-```powershell
-Copy-Item -LiteralPath genius.config.example.json -Destination genius.config.json
-```
+### 2. build とテスト
 
-POSIX shell では次を使います。
-
-```sh
-cp genius.config.example.json genius.config.json
-```
-
-`genius.config.json` のソースパスをローカル環境に合わせて編集した後、build、migration、
-テストを実行します。
-
-```text
+```bash
 npm run build
 npm run migrate
 npm test
 ```
 
-サービス起動は共有 worktree や実装セッションから行わず、Excubitor または人間が
-プロジェクト本体で行います。開発時は `npm run dev`、build 済み成果物は `npm start` です。
-起動後は、設定した port の `/healthz` を確認します。example の port は 4230 です。
+### 3. 起動
 
-```text
+```bash
+npm start            # build 済み成果物 (開発時は npm run dev)
 curl http://127.0.0.1:4230/healthz
 ```
 
-PowerShell の場合:
+サービス起動は共有 worktree や実装セッションから行わず、Excubitor または人間がプロジェクト本体で行う。
+port の正本は Excubitor catalog (example は 4230)。
 
-```powershell
-Invoke-RestMethod -Uri http://127.0.0.1:4230/healthz
-```
+### 4. カードを溜める・引く
 
-## 設定
-
-ローカル正本は `genius.config.json` です。相対ディレクトリは設定ファイルのある
-ディレクトリを基準に解決されます。ソースを `null` にすると無効になり、選択 ingest 時は
-明示エラーになります。意図した欠損だけ `--allow-missing` で警告付きスキップできます。
-
-サービス設定の環境変数 override は次のとおりです。空文字や不正値は fail-fast します。
-
-| 環境変数 | 対象 |
-|---|---|
-| `GENIUS_PORT` | HTTP port |
-| `GENIUS_BIND_HOST` | 待ち受け interface。既定 `127.0.0.1`、公開するなら `0.0.0.0` |
-| `GENIUS_ALLOWED_ORIGINS` | loopback 以外に許可する origin。カンマ区切りの完全一致 |
-| `GENIUS_DATA_DIR` | SQLite と派生データの保存ディレクトリ |
-| `GENIUS_EMBEDDING_BASE_URL` | Ollama embedding URL (loopback のみ) |
-| `GENIUS_EMBEDDING_MODEL` | embedding model |
-| `GENIUS_EMBEDDING_DIM` | embedding 次元。現行 schema は 1024 固定 |
-| `GENIUS_EMBEDDING_NUM_GPU` | Ollama `num_gpu`。未指定は Ollama 既定、`0` は明示的 CPU 実行 |
-| `GENIUS_DISTILL_BACKEND` | `claude-cli` または `ollama` |
-| `GENIUS_DISTILL_MODEL` | Claude CLI 蒸留 model |
-| `GENIUS_DISTILL_SENSITIVE_CHECK_MODEL` | public 二重チェック用 Claude model |
-| `GENIUS_DISTILL_OLLAMA_MODEL` | Ollama 蒸留 model |
-| `GENIUS_SOURCE_MEMORY_DIR` | memory MD ディレクトリ |
-| `GENIUS_SOURCE_SESSION_LOGS_DIR` | session-logs ディレクトリ |
-| `GENIUS_SOURCE_CHANNEL_ARCHIVES_DIR` | Concordia channel archive ディレクトリ |
-| `GENIUS_SOURCE_REVIEW_DIR` | Review 成果物ディレクトリ |
-| `GENIUS_SOURCE_CLAUDE_PROJECTS_DIR` | Claude JSONL ディレクトリ (Tier 2) |
-| `GENIUS_SOURCE_CODEX_SESSIONS_DIR` | Codex JSONL ディレクトリ (Tier 2) |
-| `GENIUS_SOURCE_MEMORIA_BASE_URL` | Memoria API URL |
-| `GENIUS_NOTIFY_CONCORDIA_BASE_URL` | 失敗 run 通知先の Concordia base URL (loopback のみ) |
-
-MCP、hook、eval などの HTTP クライアントは `GENIUS_BASE_URL` で明示的な loopback URL を
-指定できます。未指定時はカレントディレクトリの `genius.config.json` を読みます。
-hook に限り、`GENIUS_CONFIG_PATH` で config の場所を指定できます。
-
-## CLI
-
-fresh checkout で常に成立する呼び出しは、build 後の `node dist/cli.js` です。
-
-```text
+```bash
+node dist/cli.js ingest                                     # Tier 1 を非同期 ingest
 node dist/cli.js query "判断したい内容" --domain work --visibility public -k 8
-node dist/cli.js ingest
-node dist/cli.js stats
-node dist/cli.js reembed --model <new-local-model>
 ```
 
-短い `genius` コマンドが必要なら、build 後に任意で `npm link` してください。
-CLI の `query`、`ingest`、`stats` は起動中の Genius API を利用します。
+棚卸しは `http://127.0.0.1:4230/ui/`。エージェントへの接続は [クライアント接続](spec/setup/clients.md)。
 
-## Ingest と Tier
+---
 
-引数なしの ingest 対象は Tier 1 のみです。
+## 開発規約
 
-- `memory`
-- `session-logs`
-- `channel-archives`
-- `review`
-- `memoria`
-
-```text
-node dist/cli.js ingest
-```
-
-一部だけ投入する場合:
-
-```text
-node dist/cli.js ingest --sources memory,session-logs,review
-```
-
-Tier 2 は明示的な `--tier2` が必須です。`--budget-files` は任意で、未指定なら上限なし
-(全未読ファイルを処理) です。明示指定した場合のみ、各 Tier 2 reader が新しい順に読む
-ファイル数の上限として機能します (後方互換)。Tier 2 だけを処理する夜間バッチでは
-`--sources` も明示してください。
-
-```text
-node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2
-```
-
-処理量を抑えたい場合だけ上限を付けます:
-
-```text
-node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2 --budget-files 500
-```
-
-`--sources` を省略したまま `--tier2` を付けると、Tier 1 と Tier 2 の両方が対象になります。
-ingest は非同期で、CLI は run id を返します。完了確認は次の API で行います。
-
-Memoria の diary API は月単位の一覧しか提供しないため、reader は 1970-01 から現在月までを
-列挙して古い日記の後編集も検出します。本文の再読込・再蒸留は mtime と locator のカーソルを
-超えた項目だけです。
-
-```text
-GET /api/clone/ingest/runs/<run-id>
-```
-
-## Ingest 失敗の隔離と再処理
-
-1 文書の処理失敗で run 全体は止まりません。失敗文書は `ingest_failures` テーブルへ
-永続化され (本文は保存しない)、run は残りの文書を処理して
-`completed-with-errors` で終わります。run 状況の `failedDocuments` と
-`unresolvedFailures`、`/api/clone/stats` の `unresolvedIngestFailures` で
-「失敗を抱えたまま運用が続いている」状態を確認できます。
-
-増分カーソルは失敗文書を追い越して前進するため、失敗文書の再処理は通常の
-ingest ではなく `--retry-failed` で行います。これは `ingest_failures` の未解決
-エントリだけをカーソル無関係に読み直し、成功したら `resolved_at` を立てます。
-
-```text
-node dist/cli.js ingest --sources <failed-source> --retry-failed
-```
-
-Tier 2 ソースの retry には `--tier2` も必要です (`--budget-files` は併用不可)。
-
-### ソース単位の失敗 (`source-failed`)
-
-`listDocuments` の失敗のように文書を特定できない失敗も run 全体を止めません。
-該当ソースだけを `logs/ingest.jsonl` の `source-failed` と通知へ出し、残りの
-ソースを処理して `completed-with-errors` で終わります。文書 locator が無く
-`--retry-failed` が descriptor を復元できないため `ingest_failures` には
-記録しません。したがって再処理は **通常の run** です
-(`node dist/cli.js ingest --sources <failed-source>`)。通知の retry 行も
-ソース単位の失敗には `--retry-failed` を付けません。
-
-### LLM 向け判断指針 (通知を受けたときのフォールバック)
-
-自動リトライは実装していません。判断は通知を受けたセッションの LLM、実行は
-上記コマンドです。
-
-- **リトライ**: `error_kind` が一時的要因のとき — `source-read-failed`
-  (ファイルロック・一時 I/O)、`embedding-failed` (Ollama 未起動/再起動直後)。
-  依存サービスの稼働を確認してから `--retry-failed` を 1 回実行する。
-  例外: Memoria の `tasks/...` は payload を list した reader インスタンスだけが
-  保持する仕様のため (`Memoria task descriptor must be read by the reader instance
-  that listed it`)、`--retry-failed` では解消しない。カーソルも既に追い越して
-  いるので、該当タスクが更新されて再度 list に載るまで未解決のまま残る
-  (retry を繰り返さず skip 扱いにする)。
-- **skip (放置)**: 同じ文書が retry 後も `distillation-output-invalid` /
-  `processing-failed` で落ち続けるとき。未解決のまま残しても以後の run は
-  止まらない。件数は stats に出続けるため、放置する場合はその判断を
-  チャット/レポートに明記する。
-- **人間へエスカレーション**: 同一ソースで失敗が多発する (reader やソース側の
-  構造変化が疑われる)、retry を 2 回試しても解消しない、または判断に迷う
-  場合。3 回同じ修正を試さない (three-out)。
-
-## Concordia 通知
-
-run が `failed` / `completed-with-errors` で終わると、`genius.config.json` の
-`notify.concordiaBaseUrl` へ通知を POST します。`null` は通知無効で、起動時に
-その旨を 1 行出力します。設定済みで到達不能な場合は通知エラーを stderr と
-`logs/ingest.jsonl` (`notify-failed`) に明示しますが、ingest 本体の結果は
-覆しません。
-
-- 通知経路は Concordia の chat 投稿 API `POST /v1/chat`
-  (`channel: "報告"`, `author_label: "Genius"`)。実パスは Concordia 側の正本
-  `src/api/register-chat.ts` (`app.route("/v1/chat", chatRouter(...))`) と
-  `src/api/chat.ts` (`PostSchema`: `channel` / `text` max 2000 /
-  `author_label` 必須) で確認済み (2026-07-30)。
-- payload に載せるのは run id・ソース名・失敗件数・エラー種別/メッセージ要約・
-  ソース相対の文書パスのみです。文書本文・カード本文・絶対パスは載せません
-  (Concordia の channel-archives は Genius 自身の ingest ソースであり、通知
-  内容は DB へ環流するため)。
-
-## HTTP API
-
-| Method | Path | 用途 |
-|---|---|---|
-| GET | `/healthz` | フロントワーカーの生存のみ (`{ok:true}`、I/O 無し) |
-| GET | `/readyz` | DB カード数、Ollama/model の readiness、起動時の `buildStale` 判定 (依存不可なら 503) |
-| POST | `/api/clone/query` | ローカル embedding と sqlite-vec でカード検索 |
-| POST | `/api/clone/query-batch` | 複数クエリの embedding を 1 回の Ollama 往復に集約 (上限 50 件、p95 改善策) |
-| GET | `/api/clone/cards` | `domain`、`visibility`、`category`、`tag`、`q`、sort/order、`includeSuperseded`、`includeRetired`、pagination 付き一覧 |
-| GET | `/api/clone/cards/:id` | カード取得 |
-| GET | `/api/clone/cards/:id/supersede-chain` | supersede 履歴 (置き換えた旧カード / 置換カード列) |
-| POST | `/api/clone/cards` | 手動カード追加 |
-| PATCH | `/api/clone/cards/:id` | 本文・象限・supersede・retire (`retired: true\|false`) 更新。必要時は再 embedding |
-| POST | `/api/clone/ingest/run` | 非同期 ingest 開始 |
-| GET | `/api/clone/ingest/runs/:id` | ingest 状態取得 (`status` は 4 値 union + `unresolvedFailures`) |
-| GET | `/api/clone/stats` | 象限・tier・supersede・retire・active・最終 ingest・未解決失敗件数の集計 |
-| GET | `/api/clone/export?visibility=public` | active public カード export (supersede 済み・retire 済みは除外) |
-
-DELETE API はありません。カードを外すのは置換 (`supersededBy`) か置換先なしの
-retire (`retiredAt`) で、どちらも行は残ります。「活性カード」の判定
-(`superseded_by IS NULL AND retired_at IS NULL`) は `src/cards/active-card-sql.ts`
-に一元定義されており、検索・集計・公開 export はすべてそこを参照します。詳細な
-body と response は `spec/interface/api.md` を参照してください。
-
-## 棚卸し WebUI (`/ui/`)
-
-サービス起動後、`http://127.0.0.1:<port>/ui/` でカード棚卸し画面を開けます
-(port は `genius.config.json`。ハードコードしない)。ビルド手順は不要で、
-`ui/` の素の HTML/CSS/ES modules をそのまま配信します (`npm run build` の対象外)。
-
-できること: 象限・カテゴリー・タグ・全文フィルタと作成日/confidence ソート、
-supersede 済み / retire 済みの表示切替、カード詳細 (本文・sourceRef・supersede
-チェーン)、本文/カテゴリー編集、象限変更、supersede (既存カードで置換 /
-新規カードで置換 / 置換リンク解除)、retire (置換先なしの非活性化 / 復活)、
-手動カード追加、カテゴリー追加。
-
-注意点:
-
-- Genius 自身に認証はありません。既定の `127.0.0.1` 以外へ bind する場合は、
-  前段でアクセス制御し、ブラウザ側の origin を `server.allowedOrigins` に完全一致で
-  列挙してください。
-- sensitive→public 昇格はサーバ側で二重チェックが再実行され、拒否されると 409 に
-  なります。UI は拒否理由をそのまま表示し、成功したようには見せません。
-- UI からの更新は `changedBy: "ui"` として `clone_card_revisions` に記録されます
-  (記録されるのは変更された列名のみ)。
-- ブラウザ経由の防御 (CORS 非提供・更新系の `Content-Type: application/json` 必須・
-  loopback または明示許可されていない `Origin` の拒否) は `spec/interface/api.md` を参照。
-
-## MCP server
-
-stdio MCP server は public 専用 tool `genius_query` を提供します。Genius サービスを先に起動し、
-クライアント設定では repository を cwd にして compiled server を指定します。
-
-```json
-{
-  "command": "node",
-  "args": ["<repo>/dist/mcp/server.js"],
-  "cwd": "<repo>"
-}
-```
-
-開発時の手動確認には `npm run mcp` も利用できます。stdio の stdout は MCP データ専用で、
-診断は stderr に出力されます。
-
-## Harness hook
-
-`hooks/genius-supply.mjs` は UTF-8 prompt を stdin で受け、カード配列を
-`[genius-supply]` ブロックとして stdout に返します。config loader の compiled module を
-利用するため、先に `npm run build` が必要です。検索は public 固定で、内部メタデータは
-stdout へ出しません。手動確認・テスト用の契約は厳格 (fail-closed) です。
-
-```powershell
-'実装方針をどう決めるべきか' | node hooks/genius-supply.mjs
-```
-
-失敗時は stdout に空ブロックを返さず、stderr と非 0 exit で明示的に失敗します。
-
-### Claude Code UserPromptSubmit への配線
-
-`hooks/genius-supply.mjs` を UserPromptSubmit hook に直接指定しないでください。
-Claude Code は raw prompt 文字列ではなく JSON payload (`{ prompt, cwd, session_id,
-... }`) を stdin へ渡すため、そのまま配線すると payload 全体が query 文字列に
-なってしまいます。加えて、fail-closed 契約はセッション全体のプロンプト送信を
-Genius 未起動時にブロックしてしまうため、常時起動していない補助サービスとして
-不適切です。
-
-`hooks/genius-harness-supply.mjs` はこの2点を解消する配線用アダプタです。
-JSON payload から `prompt` を取り出し、`GENIUS_HARNESS_HOOKS=1` の opt-in のときだけ
-動作し、タイムアウト (既定 2000ms、`GENIUS_HARNESS_TIMEOUT_MS` で変更可) を含む
-あらゆる失敗を fail-open (無音の exit 0) として扱います。Genius が未起動・低速でも
-プロンプト送信を妨げません。カード取得・整形ロジックは `genius-supply.mjs` と共有します。
-
-| 環境変数 | 用途 |
-|---|---|
-| `GENIUS_HARNESS_HOOKS` | `1` で有効化。未設定/他の値は no-op (既定 disabled) |
-| `GENIUS_HARNESS_TIMEOUT_MS` | クエリのタイムアウト予算 (既定 2000) |
-| `GENIUS_HARNESS_DEBUG` | `1` で診断ログを stderr へ (カード内容は出力しない) |
-
-`E:/Document/Ars/.claude/settings.json` の `UserPromptSubmit` へ実際に配線するのは
-Ars 側の運用作業です (この repository はスクリプト提供まで)。配線する場合は
-他の supply hook (`anatomia-supply.mjs` 等) と同様に、次の形の entry を追加します。
-
-```json
-{
-  "type": "command",
-  "command": "node Genius/hooks/genius-harness-supply.mjs",
-  "timeout": 3
-}
-```
-
-有効化するホスト環境では `GENIUS_HARNESS_HOOKS=1` を settings.json の `env` に
-設定してください。
-
-## 日次運用と Concordia Timer Delegation
-
-日次ジョブは Genius サービスが Excubitor 管理下で稼働していることを確認してから、
-repository を working directory として次を実行する想定です。
-
-```text
-node dist/cli.js ingest
-```
-
-Timer Delegation には上記 command、Genius repository の working directory、失敗時の通知を
-設定します。CLI 成功は非同期 run の受付成功を表すため、返された run id を
-`GET /api/clone/ingest/runs/:id` で polling し、`completed` または
-`completed-with-errors` を完了条件にしてください (「`completed` 以外は失敗」と
-判定しない — `src/client/ingest-run-contract.ts` の `isIngestRunSuccessful` を使う)。
-`completed-with-errors` の場合は「Ingest 失敗の隔離と再処理」の指針に従います。
-
-### Tier 2 夜間バッチ (Memoria #550)
-
-Tier 2 は日次 Tier 1 と分け、budget なし (全量) の夜間 job にします。`--sources` を
-省略したまま `--tier2` を付けると Tier 1 と Tier 2 の両方が対象になってしまうため、
-夜間 job では Tier 2 ソースのみを明示します。
-
-```text
-npm run ingest:tier2-nightly
-```
-
-このスクリプトは `node dist/cli.js ingest --sources claude-jsonl,codex-jsonl --tier2`
-を固定でラップしたものです (`test/cli.test.ts` に、この厳密な引数列が CLI パーサと
-ingest サービスの契約どおりに解決されることを保証する回帰テストがあります)。budget は
-未指定 = 上限なしです。上限を付けたい場合は `node dist/cli.js ingest --sources
-claude-jsonl,codex-jsonl --tier2 --budget-files <N>` を直接呼び出してください。
-
-**初回のみ手動実行で全量を消化してから timer に乗せてください。** 未読 backlog 全体
-(生ログ数 GB 規模) を初回 run が一度に処理するため、実行時間が大きく伸びます。増分
-カーソルがあるので 2 回目以降は実質差分のみですが、timer 側の完了待ちタイムアウトは
-初回実測に合わせて設定してください。
-
-カーソルはソース単位で「そのソースの batch を全件処理し終えた後」に保存されます。
-文書単位の失敗は隔離されて run は続行するため (`ingest_failures` に記録され
-`completed-with-errors` で終わる)、カーソルは通常どおり進みます。一方 run が
-プロセスごと中断された場合 (timer のタイムアウト打ち切り・クラッシュ) は、その
-ソースの進捗が保存されず次回は最初からやり直しになります。timer の完了待ち
-タイムアウトが初回 run より短いと毎回打ち切られて永久に進まないため、初回は必ず
-手動で完走させてください。
-
-既に `--budget-files N` 付きで運用していた環境から移行する場合、保存済みカーソルに
-未消化の catch-up 範囲が残っていることがあります。この場合 batch を mtime 降順に
-保つため、上限なしでも 1 回目で catch-up 範囲、2 回目で残りの backlog という順に
-分かれます (取りこぼし・再処理は無し)。`documents` が空になる run まで繰り返せば
-消化完了です。
-
-Timer Delegation の実際のスケジュール登録 (cron 式・delegation template の追加) は
-Concordia 自身のコード (`src/delegation/seed.ts` の template 定義と
-`src/scheduler/cron-jobs.ts` の `CRON_JOBS` 配列) を編集して行う、Concordia 側の実装です。
-Concordia には他リポが自己登録できる設定ファイルや API は無く、既存の 2 件
-(`ludiars-review-daily`、`daily-review-reconciliation`) もすべて Concordia 内の
-固定リストとして追加されています。Genius リポジトリはこの `npm run
-ingest:tier2-nightly` を Timer Delegation の呼び出し先として提供するところまでが
-スコープで、Concordia 側への template・cron 追加はこの repository の実装スコープ外です。
-
-Timer 登録そのものと Excubitor 起動設定はこの repository の実装スコープ外です。
-
-## Recall 評価
-
-`eval/gold.jsonl` に 1 行 1 JSON で既知ペアを置きます。これは実データを含むため
-gitignore 対象です。
-
-```json
-{"query":"設定不備をどう扱うか","expectedSourceRefs":["memory:decision#fail-fast"]}
-```
-
-サービス起動後に次を実行します。
-
-```text
-npm run eval
-```
-
-gold が未作成なら、その旨を表示して exit 0 になります。既存ファイルが不正、または API
-query が失敗した場合は fail-fast します。
-
-## Re-embedding
-
-モデル移行は全カードを再 embedding し、成功後に active model を切り替えます。
-
-1. 1024 次元を返すローカル model を Ollama へ pull する。
-2. SQLite backup を取得する。
-3. Excubitor または人間が Genius サービスを停止する。catalog は
-   `autostart: true` / `restart_policy: on-failure` なので、プロセスを直接
-   kill すると異常終了とみなされて再起動され得ます。停止は Excubitor 経由で
-   行い、作業中サービスが上がっていないことを確認してください。
-4. `node dist/cli.js reembed --model <new-local-model>` を実行する。
-5. サービスを再起動し、`/healthz` と代表 query を確認する。
-
-途中で失敗した場合は旧 index と active model を維持し、無言で旧 model へ
-フォールバックしません。
-
-## Backup / restore
-
-`clone_cards` が正本で、vector と embedding cache は再生成可能です。ただし通常は
-cursor と run 履歴を含む SQLite 全体を backup します。
-
-- 稼働中の DB はファイル 1 個だけを直接コピーせず、SQLite CLI の `.backup` API を使います。
-- backup は `data/backups/` など gitignore 配下へ日時付きで保存し、別媒体へ移送します。
-- `genius.config.json` は個人パスを含むため、repository 外のアクセス制御された場所へ
-  別途 backup します。
-- raw copy/restore を行う場合は、Excubitor または人間がサービスを停止してから DB、WAL、SHM
-  を一組として扱います。停止は Excubitor 経由で行います (`restart_policy: on-failure`
-  のため、プロセスを直接 kill すると再起動されて DB が再び開かれ得ます)。
-  restore 後は migration、`/healthz`、代表 query を確認します。
-
-例として、SQLite CLI がある環境では次の形で一貫した snapshot を取得できます。実行前に
-保存先ディレクトリを作り、ファイル名を日時付きに変更してください。
-
-```text
-sqlite3 data/genius.db ".backup 'data/backups/genius-snapshot.db'"
-```
-
-## トラブルシューティング
-
-| 症状 | 確認事項 |
-|---|---|
-| config が無いという起動エラー | `genius.config.example.json` を `genius.config.json` へコピーし、example を直接使用しない |
-| `/readyz` が 503 / Ollama unavailable | Ollama の稼働、`ollama list`、embedding model 名を確認する。`/healthz` はプロセス生存のみを返す |
-| `/readyz` の `buildStale` が `true` | `npm run build` を実行し、Excubitor または人間の運用手順でサービスを再起動する |
-| model not pulled | `ollama pull <model>` 後に再実行する。別 backend へ自動切替しない |
-| Ollama GPU runner が明示エラーになる | GPU runtime を修復するか、意図して CPU 実行する場合だけ config の `embedding.numGpu` または `GENIUS_EMBEDDING_NUM_GPU=0` を設定する |
-| 疎なリクエスト後に最初のクエリだけ極端に遅い/詰まる | GPU runtime が壊れたホストでは unload 後の再ロードが GPU 経路を試みて失敗し得る。`embedding.keepAlive` または `GENIUS_EMBEDDING_KEEP_ALIVE` (例 `"30m"`) でモデル常駐を維持する |
-| source is not configured | config の該当 source を設定する。意図した欠損だけ `--allow-missing` を使う |
-| Tier 2 budget error | `--budget-files N` は `--tier2` と組で、正の整数だけを指定する。未指定は上限なしで正常 |
-| Claude CLI 起動・認証エラー | `claude` が PATH 上にあり、対話不要で認証済みか確認する |
-| MCP/hook が config を見つけない | cwd を repository にするか、loopback の `GENIUS_BASE_URL` を明示する |
-| hook が compiled config を見つけない | repository で `npm run build` を実行する |
-| active model / dimension mismatch | config と 1024 次元 index を確認し、必要なら maintenance 手順で reembed する |
-| ingest が受付後に失敗する | run status と `logs/ingest.jsonl` を確認する。文書単位の失敗は `ingest_failures` に残り、`--retry-failed` で再処理する |
-| `completed-with-errors` が続く | `/api/clone/stats` の `unresolvedIngestFailures` と `ingest_failures` を確認し、「LLM 向け判断指針」に従って retry / skip / エスカレーションを判断する |
-| 失敗通知が届かない | `notify.concordiaBaseUrl` が null になっていないか、起動ログの `[notify]` 行と `logs/ingest.jsonl` の `notify-failed` を確認する |
-
-## Excubitor catalog
-
-`genius.config.example.json` と設計書では 4230 を候補値として使用していますが、catalog 登録は
-運用側の作業です。サービス port と endpoint の正本は登録後の Excubitor catalog / ProcessMap
-であり、登録値と `genius.config.json` を一致させてください。実装セッションや worktree から
-サービスを直接 spawn しません。
-
-## ドキュメント
+LUDIARS 共通規約に従う (SRP・1 ファイル 1 責務・エラー握りつぶし禁止)。変更は feat ブランチ + PR。
+テストは `test/` 配下、実データを含まない合成フィクスチャのみ。
 
 | 場所 | 内容 |
 |---|---|
-| `spec/feature/clone-db.md` | 本体設計 (アーキテクチャ・パイプライン・四象限) |
-| `spec/data/schema.md` | DB スキーマ |
-| `spec/interface/api.md` | API / 設定ファイル |
-| `spec/setup/setup.md` | セットアップ |
-| `spec/test/test.md` | テスト戦略と recall 評価 |
-| `spec/plan/2026-07-17-feasibility.md` | 実現可能性定義 |
-| `spec/tasks/` | 実装タスク分解 (正本) |
+| [`spec/feature/clone-db.md`](spec/feature/clone-db.md) | 本体設計 (アーキテクチャ・パイプライン・四象限) |
+| [`spec/feature/operations.md`](spec/feature/operations.md) | 運用化設計 (カテゴリー・公開ゲート・WebUI) |
+| [`spec/data/schema.md`](spec/data/schema.md) | DB スキーマ |
+| [`spec/interface/api.md`](spec/interface/api.md) | API / 設定ファイル |
+| [`spec/test/test.md`](spec/test/test.md) | テスト戦略と recall 評価 |
+| [`spec/tasks/`](spec/tasks/) | 実装タスク分解 (正本) |
