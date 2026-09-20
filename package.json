@@ -24,6 +24,7 @@
   "dependencies": {
     "@hono/node-server": "2.0.10",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@typesafe-ai/sdk": "^0.6.0",
     "better-sqlite3": "13.0.3",
     "hono": "4.12.34",
     "sqlite-vec": "0.1.9",

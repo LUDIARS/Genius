@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "repository": "LUDIARS/Genius",
+  "defaultBus": "local",
+  "buses": {
+    "local": {
+      "type": "local",
+      "env": []
+    }
+  },
+  "runners": {
+    "vitest": {
+      "command": ["node", "node_modules/vitest/vitest.mjs", "run"],
+      "selectorFlag": "-t",
+      "reporter": "json"
+    }
+  },
+  "quota": {
+    "default": { "max": 12 },
+    "byPriority": { "critical": 24, "high": 16, "medium": 10, "low": 6 },
+    "domains": {}
+  },
+  "retirement": {
+    "probationAfterDays": 90,
+    "probationAfterPasses": 30,
+    "retireAfterDays": 180,
+    "incidentHorizonDays": 365,
+    "exemptKinds": ["guardrail"],
+    "exemptAlways": true
+  },
+  "impact": { "callerDepth": 2 },
+  "layout": { "newTestPath": "test/{module}.test.ts" },
+  "timeoutMs": 600000
+}

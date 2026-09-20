@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CardRepository } from "../../src/cards/card-repository.js";
+import { TextLlmClassifier } from "../../src/classify/text-llm-classifier.js";
 import { CategoryRepository } from "../../src/categories/category-repository.js";
 import { openDatabase, type GeniusDatabase } from "../../src/db/database.js";
 import { runMigrations } from "../../src/db/migrate.js";
@@ -63,8 +64,8 @@ function createService(
 ): CategorizeBackfillService {
   return new CategorizeBackfillService({
     categories: new CategoryRepository(database).listSync(),
+    classifier: new TextLlmClassifier(llm),
     database,
-    llm,
     stdout,
   });
 }
@@ -77,8 +78,8 @@ describe("CategorizeBackfillService", () => {
       const second = insertCard(database, "fixture:second");
       const already = insertCard(database, "fixture:already", "general");
       const llm = new QueueLlm([
-        JSON.stringify({ category: "impl-design" }),
-        JSON.stringify({ category: "workflow" }),
+        JSON.stringify({ label: "impl-design" }),
+        JSON.stringify({ label: "workflow" }),
       ]);
       const output: string[] = [];
 
@@ -98,7 +99,7 @@ describe("CategorizeBackfillService", () => {
       expect(joined).toContain(`2/2 ${second.id} -> workflow`);
       expect(joined).toContain("done: 2/2");
       expect(llm.requests.every((request) => request.purpose === "categorize")).toBe(true);
-      expect(llm.requests[0]?.systemPrompt).toContain("- `impl-design`");
+      expect(llm.requests[0]?.systemPrompt).toContain("- impl-design: ");
       expect(llm.requests[0]?.prompt).toContain("fixture:first situation");
       expect(llm.requests[0]?.prompt).not.toContain("rationale");
     } finally {
@@ -111,13 +112,13 @@ describe("CategorizeBackfillService", () => {
     try {
       const failing = insertCard(database, "fixture:reject", null, "card-1-reject");
       const surviving = insertCard(database, "fixture:survive", null, "card-2-survive");
-      const offVocabulary = JSON.stringify({ category: "not-a-category" });
+      const offVocabulary = JSON.stringify({ label: "not-a-category" });
       const llm = new QueueLlm([
         // 1 枚目は 3 回とも統制外カテゴリー → per-card 失敗として skip される。
         offVocabulary,
         offVocabulary,
         offVocabulary,
-        JSON.stringify({ category: "workflow" }),
+        JSON.stringify({ label: "workflow" }),
       ]);
       const output: string[] = [];
 
@@ -147,8 +148,8 @@ describe("CategorizeBackfillService", () => {
           ` WHEN NEW.id = '${rejected.id}' BEGIN SELECT RAISE(ABORT, 'categorize rejected'); END`,
       );
       const llm = new QueueLlm([
-        JSON.stringify({ category: "workflow" }),
-        JSON.stringify({ category: "workflow" }),
+        JSON.stringify({ label: "workflow" }),
+        JSON.stringify({ label: "workflow" }),
       ]);
       const output: string[] = [];
 

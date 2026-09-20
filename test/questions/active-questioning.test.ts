@@ -5,6 +5,7 @@ import type { DistillCompletionRequest, DistillLlm } from "../../src/distill/dis
 import type { PublicCardGate } from "../../src/distill/public-card-gate.js";
 import type { DistilledCard } from "../../src/domain/card.js";
 import type { EmbeddingClient } from "../../src/embedding/types.js";
+import { TextLlmClassifier } from "../../src/classify/text-llm-classifier.js";
 import { ContradictionDetector } from "../../src/questions/contradiction-detector.js";
 import { GapRepository } from "../../src/questions/gap-repository.js";
 import { QuestionGenerationService } from "../../src/questions/question-generation-service.js";
@@ -31,7 +32,7 @@ class EchoQuestionLlm implements DistillLlm {
   async complete(request: DistillCompletionRequest): Promise<string> {
     this.requests.push(request);
     if (request.purpose === "contradiction-check") {
-      return JSON.stringify({ contradiction: true, reason: "opposite instructions" });
+      return JSON.stringify({ yes: true, reason: "opposite instructions" });
     }
     if (request.purpose !== "question-generation" || typeof request.prompt !== "string") {
       throw new Error(`Unexpected purpose: ${request.purpose}`);
@@ -132,10 +133,11 @@ describe("active questioning Q3+Q4", () => {
       database: db,
       embedder: new TextEmbeddingClient(),
       gaps: new GapRepository(db),
-      llm,
+      classifier: new TextLlmClassifier(llm),
       questions: new QuestionRepository(db),
       situationSimilarityMin: 0.85,
       judgmentSimilarityMax: 0.5,
+      contradictionThreshold: 0.6,
     });
 
     const gaps = await detector.detect(5);

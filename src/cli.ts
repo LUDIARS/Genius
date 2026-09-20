@@ -8,6 +8,7 @@ import { resolveGeniusBaseUrl } from "./client/base-url.js";
 import { CardRepository } from "./cards/card-repository.js";
 import { CategoryRepository } from "./categories/category-repository.js";
 import { loadConfig, type LoadConfigOptions } from "./config/load-config.js";
+import { createClassifier } from "./classify/create-classifier.js";
 import { createDistillLlm } from "./distill/create-distill-llm.js";
 import { domainSchema, visibilitySchema } from "./domain/card.js";
 import { CARD_FEEDBACK_RATINGS, cardFeedbackRatingSchema } from "./domain/feedback.js";
@@ -221,8 +222,8 @@ async function runCategorize(
     await llm.assertReady();
     const service = new CategorizeBackfillService({
       categories: new CategoryRepository(database).listSync(),
+      classifier: createClassifier(config, llm),
       database,
-      llm,
       stdout,
     });
     const result = await service.run();

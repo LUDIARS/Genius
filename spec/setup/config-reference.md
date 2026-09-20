@@ -24,6 +24,12 @@
 | `GENIUS_DISTILL_MODEL` | Claude CLI 蒸留 model |
 | `GENIUS_DISTILL_SENSITIVE_CHECK_MODEL` | public 二重チェック用 Claude model |
 | `GENIUS_DISTILL_OLLAMA_MODEL` | Ollama 蒸留 model |
+| `GENIUS_CLASSIFIER_BACKEND` | `distill-llm` (既定) または `jev` |
+| `GENIUS_CLASSIFIER_API_KEY` | TypeSafe AI の API key。未指定なら SDK が `TYPESAFE_API_KEY` を読む |
+| `GENIUS_CLASSIFIER_MODEL` | 判定 model。未指定は SDK 既定の `jev-latest` |
+| `GENIUS_CLASSIFIER_BASE_URL` | 判定 API の root。未指定は `https://api.typesafe.ai` |
+| `GENIUS_CLASSIFIER_TIMEOUT_MS` | 判定 1 試行あたりのタイムアウト (ms) |
+| `GENIUS_CLASSIFIER_CONTRADICTION_THRESHOLD` | 矛盾と判定する確率の下限 (0 < x < 1) |
 | `GENIUS_SOURCE_MEMORY_DIR` | memory MD ディレクトリ |
 | `GENIUS_SOURCE_SESSION_LOGS_DIR` | session-logs ディレクトリ |
 | `GENIUS_SOURCE_CHANNEL_ARCHIVES_DIR` | Concordia channel archive ディレクトリ |
@@ -32,6 +38,20 @@
 | `GENIUS_SOURCE_CODEX_SESSIONS_DIR` | Codex JSONL ディレクトリ (Tier 2) |
 | `GENIUS_SOURCE_MEMORIA_BASE_URL` | Memoria API URL |
 | `GENIUS_NOTIFY_CONCORDIA_BASE_URL` | 失敗 run 通知先の Concordia base URL (loopback のみ) |
+
+## 判定バックエンド (classifier)
+
+判定 (categorize / contradiction-check) は蒸留とは別のバックエンドに切り替えられます。
+
+- `distill-llm` (既定) — `distill` と同じローカル LLM だけを使う。カード内容は
+  このマシンから出ません。
+- `jev` — TypeSafe AI (Jev) を足します。ただし外へ出るのは **公開安全な判定だけ** です。
+  `visibility: sensitive` のカードを含む判定は、この設定でも必ずローカルで処理します
+  (振り分けの唯一の判断点は `src/classify/disclosure-routed-classifier.ts`)。
+  外部呼び出しが失敗したときは警告を 1 行出してローカル判定へ退避します。
+
+sensitive-check (公開可否の二重チェック) と merge-check はカード本文そのものを扱うため、
+`jev` を選んでもローカル経路のままです。
 
 ## クライアント側
 

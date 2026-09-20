@@ -18,6 +18,14 @@
     "sensitiveCheckModel": "claude-haiku-4-5-20251001",
     "ollamaModel": "gemma4:12b"
   },
+  "classifier": {
+    "backend": "distill-llm",
+    "apiKey": null,
+    "model": null,
+    "baseUrl": null,
+    "timeoutMs": 10000,
+    "contradictionThreshold": 0.6
+  },
   "notify": {
     "concordiaBaseUrl": null
   },

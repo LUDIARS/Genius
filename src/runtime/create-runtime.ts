@@ -10,6 +10,7 @@ import type { LoadedGeniusConfig } from "../config/types.js";
 import { openConfiguredDatabase, type GeniusDatabase } from "../db/database.js";
 import { runMigrations } from "../db/migrate.js";
 import { renderDistillPrompt } from "../distill/category-vocabulary.js";
+import { createClassifier } from "../classify/create-classifier.js";
 import { createDistillLlm } from "../distill/create-distill-llm.js";
 import { DistillationService } from "../distill/distillation-service.js";
 import { LlmPublicCardGate } from "../distill/public-card-gate.js";
@@ -98,6 +99,7 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
     }
 
     const llm = createDistillLlm(config);
+    const classifier = createClassifier(config, llm);
     if (options.checkReadiness ?? true) await llm.assertReady();
     const publicCardGate = new LlmPublicCardGate(llm);
     const cardsRepository = new CardRepository(database);
@@ -136,10 +138,11 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
         database,
         embedder,
         gaps: gapRepository,
-        llm,
+        classifier,
         questions: questionRepository,
         situationSimilarityMin: config.contradiction.situationSimilarityMin,
         judgmentSimilarityMax: config.contradiction.judgmentSimilarityMax,
+        contradictionThreshold: config.classifier.contradictionThreshold,
       }),
       gaps: gapRepository,
       llm,

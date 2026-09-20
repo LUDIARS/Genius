@@ -67,6 +67,27 @@ const configSchema = z
         ollamaModel: z.string().trim().min(1),
       })
       .strict(),
+    // classifier 節が無い既存 config を壊さないため optional。既定は
+    // 「ローカル判定のみ」= Jev 導入前と同じ挙動。
+    classifier: z
+      .object({
+        backend: z.enum(["distill-llm", "jev"]).default("distill-llm"),
+        apiKey: z.string().trim().min(1).nullable().default(null),
+        model: z.string().trim().min(1).nullable().default(null),
+        baseUrl: z.string().trim().min(1).nullable().default(null),
+        timeoutMs: z.number().int().min(1).default(10_000),
+        contradictionThreshold: z.number().gt(0).lt(1).default(0.6),
+      })
+      .strict()
+      .optional()
+      .default({
+        backend: "distill-llm",
+        apiKey: null,
+        model: null,
+        baseUrl: null,
+        timeoutMs: 10_000,
+        contradictionThreshold: 0.6,
+      }),
     sources: sourceConfigSchema,
     // notify 節が無い既存 config を壊さないため optional。既定は「通知無効」
     // だが無言にはせず、createRuntime が起動時に 1 行明示する。
@@ -155,6 +176,12 @@ export const CONFIG_ENVIRONMENT_VARIABLES = {
   distillModel: "GENIUS_DISTILL_MODEL",
   sensitiveCheckModel: "GENIUS_DISTILL_SENSITIVE_CHECK_MODEL",
   distillOllamaModel: "GENIUS_DISTILL_OLLAMA_MODEL",
+  classifierBackend: "GENIUS_CLASSIFIER_BACKEND",
+  classifierApiKey: "GENIUS_CLASSIFIER_API_KEY",
+  classifierModel: "GENIUS_CLASSIFIER_MODEL",
+  classifierBaseUrl: "GENIUS_CLASSIFIER_BASE_URL",
+  classifierTimeoutMs: "GENIUS_CLASSIFIER_TIMEOUT_MS",
+  classifierContradictionThreshold: "GENIUS_CLASSIFIER_CONTRADICTION_THRESHOLD",
   memoryDir: "GENIUS_SOURCE_MEMORY_DIR",
   sessionLogsDir: "GENIUS_SOURCE_SESSION_LOGS_DIR",
   channelArchivesDir: "GENIUS_SOURCE_CHANNEL_ARCHIVES_DIR",
@@ -202,6 +229,50 @@ function strictInteger(value: string, name: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed)) {
     throw new ConfigError(`${name} must be a safe integer`);
+  }
+  return parsed;
+}
+
+/**
+ * 判定バックエンドの環境変数上書き。API key は SDK 自身が `TYPESAFE_API_KEY` を
+ * 読むので、ここで扱うのは config へ明示的に載せたい場合の
+ * `GENIUS_CLASSIFIER_API_KEY` だけ。
+ */
+function applyClassifierOverrides(
+  classifier: MutableJsonObject,
+  environment: NodeJS.ProcessEnv,
+): void {
+  const backend = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.classifierBackend);
+  if (backend !== undefined) classifier.backend = backend;
+  const apiKey = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.classifierApiKey);
+  if (apiKey !== undefined) classifier.apiKey = apiKey;
+  const model = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.classifierModel);
+  if (model !== undefined) classifier.model = model;
+  const baseUrl = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.classifierBaseUrl);
+  if (baseUrl !== undefined) classifier.baseUrl = baseUrl;
+  const timeoutMs = environmentValue(environment, CONFIG_ENVIRONMENT_VARIABLES.classifierTimeoutMs);
+  if (timeoutMs !== undefined) {
+    classifier.timeoutMs = strictInteger(
+      timeoutMs,
+      CONFIG_ENVIRONMENT_VARIABLES.classifierTimeoutMs,
+    );
+  }
+  const threshold = environmentValue(
+    environment,
+    CONFIG_ENVIRONMENT_VARIABLES.classifierContradictionThreshold,
+  );
+  if (threshold !== undefined) {
+    classifier.contradictionThreshold = strictFraction(
+      threshold,
+      CONFIG_ENVIRONMENT_VARIABLES.classifierContradictionThreshold,
+    );
+  }
+}
+
+function strictFraction(value: string, name: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 1) {
+    throw new ConfigError(`${name} must be a number strictly between 0 and 1`);
   }
   return parsed;
 }
@@ -289,6 +360,8 @@ function applyEnvironmentOverrides(
     CONFIG_ENVIRONMENT_VARIABLES.distillOllamaModel,
   );
   if (distillOllamaModel !== undefined) distill.ollamaModel = distillOllamaModel;
+
+  applyClassifierOverrides(objectAt(result, "classifier"), environment);
 
   const sourceOverrides: readonly [keyof SourceConfig, string][] = [
     ["memoryDir", CONFIG_ENVIRONMENT_VARIABLES.memoryDir],

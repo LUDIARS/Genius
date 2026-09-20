@@ -50,6 +50,28 @@ export interface DistillConfig {
   ollamaModel: string;
 }
 
+/**
+ * 判定 (classification) バックエンド。
+ *
+ * `distill-llm` = distill と同じローカル LLM だけを使う (既定)。カード内容は
+ * このマシンから出ない。`jev` = TypeSafe AI (Jev) を足すが、外へ出るのは
+ * 公開安全な判定だけ (2026-09-20 neco 指示 — 送出範囲は
+ * `classify/disclosure-routed-classifier.ts` が唯一の判断点)。
+ */
+export interface ClassifierConfig {
+  backend: "distill-llm" | "jev";
+  /** null なら SDK が `TYPESAFE_API_KEY` を読む。config に直書きもできる。 */
+  apiKey: string | null;
+  /** null なら SDK 既定 (`jev-latest`)。 */
+  model: string | null;
+  /** null なら SDK 既定 (`https://api.typesafe.ai`)。 */
+  baseUrl: string | null;
+  /** 1 試行あたりのタイムアウト (ms)。 */
+  timeoutMs: number;
+  /** 矛盾と判定する Noul 確率の下限。見逃しより誤検知の方が安いので低めに置く。 */
+  contradictionThreshold: number;
+}
+
 export interface NotifyConfig {
   /**
    * 失敗 run (failed / completed-with-errors) を通知する Concordia の base URL。
@@ -106,6 +128,7 @@ export interface GeniusConfig {
   dataDir: string;
   embedding: EmbeddingConfig;
   distill: DistillConfig;
+  classifier: ClassifierConfig;
   sources: SourceConfig;
   notify: NotifyConfig;
   questions: QuestionsConfig;

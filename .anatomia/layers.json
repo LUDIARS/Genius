@@ -16,6 +16,7 @@
 
     { "glob": "src/cards/*", "layer": "domain-logic" },
     { "glob": "src/categories/*", "layer": "domain-logic" },
+    { "glob": "src/classify/*", "layer": "domain-logic" },
     { "glob": "src/config/*", "layer": "domain-logic" },
     { "glob": "src/distill/*", "layer": "domain-logic" },
     { "glob": "src/domain/*", "layer": "domain-logic" },
@@ -35,6 +36,7 @@
     { "glob": "vitest.config.ts", "layer": "shared" },
     { "glob": "test/*", "layer": "shared" },
     { "glob": "test/api/*", "layer": "shared" },
+    { "glob": "test/classify/*", "layer": "shared" },
     { "glob": "test/distill/*", "layer": "shared" },
     { "glob": "test/fixtures/*", "layer": "shared" },
     { "glob": "test/ingest/*", "layer": "shared" },
