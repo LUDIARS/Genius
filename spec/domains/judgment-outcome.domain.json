@@ -1,0 +1,40 @@
+{
+  "name": "judgment-outcome",
+  "description": "Judgment outcomes and seats (MUSA backlog S1): per-card outcome records (adopted decision / actual result / match-mismatch / recorder / time), the 14-day \"結果は?\" follow-up through the dedicated Genius channel, per-seat match-rate stats, and AI-proposed / human-confirmed seat tags for the 9 judgment seats.",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)src/outcome/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/seats/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/commands/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/contracts/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)src/domain/(?:outcome|seat)\\.ts$"
+    },
+    {
+      "pathPattern": "(^|/)src/api/routes/(?:outcome|seats)\\.ts$"
+    },
+    {
+      "namePattern": "[Oo]utcome"
+    },
+    {
+      "namePattern": "[Ss]eat"
+    }
+  ],
+  "cardTemplate": "Summarise the \"judgment-outcome\" domain: per-card outcome records, the 14-day follow-up through the Genius channel, per-seat match rates and human-confirmed seat tags.",
+  "specRefs": [
+    "Genius 判断の outcome 記録と席タグ / 2. outcome (S1-1)",
+    "Genius 判断の outcome 記録と席タグ / 3. 「結果は?」の後日配信 (S1-2)",
+    "Genius 判断の outcome 記録と席タグ / 4. 席タグ (S1-4)",
+    "Genius 判断の outcome 記録と席タグ / 5. 席別の一致率 (S1-3)"
+  ],
+  "rationale": "Outcome, follow-up, stats and seats are one feature: the seat tag exists to slice the outcome match rate, and the follow-up exists to fill outcomes. Kept apart from card-feedback (retrieval quality) on purpose."
+}

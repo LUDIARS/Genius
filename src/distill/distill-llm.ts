@@ -4,6 +4,7 @@ export type DistillPurpose =
   | "merge-check"
   | "categorize"
   | "contradiction-check"
+  | "seat-classify"
   | "question-generation"
   | "answer-shaping";
 

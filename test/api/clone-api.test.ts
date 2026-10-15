@@ -14,6 +14,10 @@ import type { PublicCardGate } from "../../src/distill/public-card-gate.js";
 import type { EmbeddingClient } from "../../src/embedding/types.js";
 import { CardFeedbackRepository } from "../../src/feedback/feedback-repository.js";
 import { CardFeedbackService } from "../../src/feedback/feedback-service.js";
+import { CardOutcomeRepository } from "../../src/outcome/outcome-repository.js";
+import { CardOutcomeService } from "../../src/outcome/outcome-service.js";
+import { SeatProposalService } from "../../src/seats/seat-proposal-service.js";
+import { SeatRepository } from "../../src/seats/seat-repository.js";
 import { VectorStore } from "../../src/embedding/vector-store.js";
 import type { IngestOptions, IngestRunRecord } from "../../src/ingest/ingest-contracts.js";
 import { IngestValidationError } from "../../src/ingest/ingest-service.js";
@@ -108,6 +112,15 @@ describe("clone API", () => {
         database,
         cards: repository,
         feedback: new CardFeedbackRepository(database),
+      }),
+      outcome: new CardOutcomeService(repository, new CardOutcomeRepository(database)),
+      seats: new SeatProposalService({
+        seats: new SeatRepository(database),
+        cards: repository,
+        classifier: {
+          async noul() { throw new Error("noul is not used by seat proposals"); },
+          async choice() { return { label: "architecture", confidence: 0.8 }; },
+        },
       }),
       // Queue behaviour has its own suite (question-api.test.ts); this one only
       // needs the shape so createApp can register the routes.
@@ -929,6 +942,171 @@ describe("clone API", () => {
       update.run(1_000 + index, id);
     });
   }
+
+  describe("judgment outcome (spec/feature/judgment-outcome.md)", () => {
+    async function putOutcome(cardId: string, body: unknown): Promise<Response> {
+      return createApp(services).request(
+        `/api/clone/cards/${encodeURIComponent(cardId)}/outcome`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+    }
+
+    const outcomeBody = {
+      adoptedDecision: "Ship behind a flag",
+      actualResult: "Rolled out without incidents",
+      verdict: "match",
+      recordedBy: "neco",
+    };
+
+    it("reads existing cards with a null outcome and seat", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:outcome-1");
+      const app = createApp(services);
+
+      const detail = (await (await app.request(`/api/clone/cards/${card.id}`)).json()) as {
+        outcome: unknown;
+        seat: unknown;
+      };
+      const listed = (await (await app.request("/api/clone/cards")).json()) as {
+        cards: Array<{ id: string; outcome: unknown; seat: unknown }>;
+      };
+      const single = await app.request(`/api/clone/cards/${card.id}/outcome`);
+
+      expect(detail.outcome).toBeNull();
+      expect(detail.seat).toBeNull();
+      expect(listed.cards.find((entry) => entry.id === card.id)).toMatchObject({
+        outcome: null,
+        seat: null,
+      });
+      expect(single.status).toBe(200);
+      expect(await single.json()).toEqual({ outcome: null });
+    });
+
+    it("stores an outcome via PUT and shows it on the card DTO", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:outcome-2");
+
+      const response = await putOutcome(card.id, outcomeBody);
+      const stored = (await response.json()) as Record<string, unknown>;
+      const detail = (await (await createApp(services).request(
+        `/api/clone/cards/${card.id}`,
+      )).json()) as { outcome: Record<string, unknown> };
+
+      expect(response.status).toBe(200);
+      expect(stored).toMatchObject({ ...outcomeBody, cardId: card.id, recordedVia: "api" });
+      expect(typeof stored.recordedAt).toBe("number");
+      expect(detail.outcome).toMatchObject({ verdict: "match", recordedBy: "neco" });
+
+      const rewritten = await putOutcome(card.id, { ...outcomeBody, verdict: "mismatch", via: "ui" });
+      expect(await rewritten.json()).toMatchObject({ verdict: "mismatch", recordedVia: "ui" });
+    });
+
+    it("rejects an unknown verdict, the discord path and unknown cards", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:outcome-3");
+
+      expect((await putOutcome(card.id, { ...outcomeBody, verdict: "maybe" })).status).toBe(400);
+      expect((await putOutcome(card.id, { ...outcomeBody, via: "discord" })).status).toBe(400);
+      expect((await putOutcome("missing", outcomeBody)).status).toBe(404);
+      expect((await createApp(services).request("/api/clone/cards/missing/outcome")).status)
+        .toBe(404);
+    });
+
+    it("returns per-seat match rates and validates the query", async () => {
+      const seated = await createCard("work", "public", "alpha", "fixture:outcome-4");
+      const other = await createCard("work", "public", "bravo", "fixture:outcome-5");
+      const app = createApp(services);
+      await services.seats.generate(10);
+      services.seats.decide(seated.id, { action: "confirm", decidedBy: "neco" });
+      await putOutcome(seated.id, outcomeBody);
+      await putOutcome(other.id, { ...outcomeBody, verdict: "mismatch" });
+
+      const all = (await (await app.request("/api/clone/stats/outcome")).json()) as {
+        total: number;
+        matchRate: number;
+        bySeat: Array<{ seat: string | null; total: number }>;
+      };
+      const architecture = (await (await app.request(
+        "/api/clone/stats/outcome?seat=architecture&from=0&to=2999-01-01",
+      )).json()) as { total: number; matchRate: number };
+
+      expect(all.total).toBe(2);
+      expect(all.matchRate).toBe(0.5);
+      expect(all.bySeat).toEqual([
+        expect.objectContaining({ seat: "architecture", total: 1 }),
+        expect.objectContaining({ seat: null, total: 1 }),
+      ]);
+      expect(architecture).toMatchObject({ total: 1, matchRate: 1 });
+      expect((await app.request("/api/clone/stats/outcome?seat=ceo")).status).toBe(400);
+      expect((await app.request("/api/clone/stats/outcome?from=5&to=1")).status).toBe(400);
+    });
+  });
+
+  describe("judgment seats (spec/feature/judgment-outcome.md §4)", () => {
+    async function post(path: string, body: unknown): Promise<Response> {
+      return createApp(services).request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("proposes seats and only a human decision tags the card", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:seat-1");
+
+      const generated = await post("/api/clone/seat-proposals/generate", { limit: 5 });
+      const listed = (await (await createApp(services).request(
+        "/api/clone/seat-proposals?status=proposed",
+      )).json()) as { proposals: Array<{ cardId: string; proposedSeat: string }> };
+      const before = (await (await createApp(services).request(
+        `/api/clone/cards/${card.id}`,
+      )).json()) as { seat: unknown };
+
+      expect(await generated.json()).toMatchObject({ scanned: 1, proposed: 1, failed: 0 });
+      expect(listed.proposals).toEqual([
+        expect.objectContaining({ cardId: card.id, proposedSeat: "architecture" }),
+      ]);
+      expect(before.seat).toBeNull();
+
+      const confirmed = await post(`/api/clone/seat-proposals/${card.id}/decision`, {
+        action: "confirm",
+        seat: "devops",
+        decidedBy: "neco",
+      });
+      const after = (await (await createApp(services).request(
+        `/api/clone/cards/${card.id}`,
+      )).json()) as { seat: unknown };
+
+      expect(confirmed.status).toBe(200);
+      expect(await confirmed.json()).toMatchObject({ status: "confirmed", decidedSeat: "devops" });
+      expect(after.seat).toBe("devops");
+
+      const again = await post(`/api/clone/seat-proposals/${card.id}/decision`, {
+        action: "reject",
+        decidedBy: "neco",
+      });
+      expect(again.status).toBe(409);
+    });
+
+    it("rejects unknown seats and decisions without a proposal", async () => {
+      const card = await createCard("work", "public", "alpha", "fixture:seat-2");
+
+      expect((await post(`/api/clone/seat-proposals/${card.id}/decision`, {
+        action: "confirm",
+        seat: "ceo",
+        decidedBy: "neco",
+      })).status).toBe(400);
+      expect((await post(`/api/clone/seat-proposals/${card.id}/decision`, {
+        action: "confirm",
+        decidedBy: "neco",
+      })).status).toBe(409);
+      expect((await post("/api/clone/seat-proposals/missing/decision", {
+        action: "reject",
+        decidedBy: "neco",
+      })).status).toBe(404);
+    });
+  });
 
   async function createCard(
     domain: QueryInput["domain"] & string,

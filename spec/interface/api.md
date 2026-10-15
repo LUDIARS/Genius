@@ -15,6 +15,12 @@
 | PATCH | `/api/clone/cards/:id` | 本文修正 / supersede / retire / 象限・category 訂正 (訂正時は再埋め込み)。`retired: true\|false` で置換先なしの非活性化と復活 (retire 時刻はサーバの clock が打つ。クライアントに時刻を渡させないため `retiredAt` は受け付けない。retire 済みへの `retired: true` は no-op で最初の時刻を保つ)。body に `changedBy?: "ui"\|"api"\|"cli"` (既定 `api`)。象限/category/retire 変更は `clone_card_revisions` に列名のみ記録。**昇格 (sensitive→public) は `LlmPublicCardGate` を再実行し、sensitive 判定なら 409 で拒否** (無言降格しない)。降格は無条件許可 |
 | POST | `/api/clone/cards/:id/feedback` | `{rating, queryId?, source?, note?, publicOnly?: true}` → 201 + `{id, summary, archived}`。rating は4値のみ。`publicOnly: true` は sensitive カードを 403 で拒否し、`false` は 400 |
 | GET | `/api/clone/cards/:id/feedback` | `{summary, recent, archivedByFeedback}`。recent は note/source を含むため公開 export には転用しない |
+| PUT | `/api/clone/cards/:id/outcome` | `{adoptedDecision, actualResult, verdict: "match"\|"mismatch", recordedBy, via?: "api"\|"ui"\|"cli"}` → 200 + outcome (上書き、`recordedAt` はサーバ時計)。無いカードは 404 (spec/feature/judgment-outcome.md §2) |
+| GET | `/api/clone/cards/:id/outcome` | `{outcome}`。未記入 (既存カード) は `null` |
+| GET | `/api/clone/stats/outcome` | `?seat=&from=&to=` — 席別の一致率 `{total, match, mismatch, matchRate, bySeat}`。期間は判断日で切る (judgment-outcome.md §5) |
+| GET | `/api/clone/seat-proposals` | `?status=proposed\|confirmed\|rejected&limit=&offset=` → `{proposals, coverage}` |
+| POST | `/api/clone/seat-proposals/generate` | `{limit?: 1..50}` → `{scanned, proposed, failed}`。席も提案も無い active カードを 9 席 + none へ分類した提案を作る (確定はしない) |
+| POST | `/api/clone/seat-proposals/:id/decision` | `{action:"confirm", decidedBy, seat?}` / `{action:"reject", decidedBy}`。確定済みへの再操作は 409 |
 | GET | `/api/clone/categories` | カテゴリー統制語彙の一覧 → `{categories: [{name, description, createdAt}]}` |
 | POST | `/api/clone/categories` | カテゴリー追加 `{name, description}` → 201。重複は 409。DELETE は提供しない |
 | POST | `/api/clone/ingest/run` | `{sources?: string[], tier2?: boolean, budgetFiles?: number, allowMissing?: boolean, retryFailed?: boolean}` → run id (非同期実行)。`budgetFiles` は `tier2=true` の時のみ指定可・未指定は上限なし (全未読ファイル)、明示時のみ Tier 2 の読み取り上限。`retryFailed=true` は `ingest_failures` の未解決文書だけをカーソル無関係に再処理する (`budgetFiles` と併用不可) |
@@ -22,6 +28,8 @@
 | GET | `/api/clone/stats` | 象限別カード数 / tier 別 / 最終 ingest / `superseded` / `retired` / `active` (= 活性カード数) / `total` / `unresolvedIngestFailures` (全ソースの未解決失敗件数) |
 | GET | `/api/clone/export` | `?visibility=public[&category=]` — **活性**な public カードの JSON export (supersede 済みと retire 済みは含めない。datahub push 用素材で push 自体はスコープ外。category は統制語彙、統制外は 400) |
 
+- カード DTO (一覧・詳細) は `outcome` (未記入は null) と、人間が確定した `seat`
+  (未確定は null) を含む。一覧はどちらも 1 本の一括取得で引く。
 - カード DTO (一覧・詳細) は rating 別の `feedback` 集計を含む。一覧は1本の
   grouped query で集計し、note/source は含めない。
 - カード DTO (一覧・詳細・query 結果) は `supersededBy` と `retiredAt`
@@ -109,6 +117,14 @@ genius stats
 genius reembed --model <name>   # モデル移行バッチ
 genius categorize --missing     # category NULL のカードを安価パスで分類する backfill
 genius feedback <cardId> <great|good|poor|not-in-case> [--note <text>] [--source <name>] [--query-id <id>]
+genius outcome set <cardId> --verdict match|mismatch --adopted <text> --result <text> --by <id>
+genius outcome get <cardId>
+genius outcome stats [--seat <seat>] [--from <iso|ms>] [--to <iso|ms>]
+genius outcome followup         # 「結果は?」の配信と返信取り込みを 1 回回す
+genius seats propose [--limit 100]
+genius seats list [--status proposed|confirmed|rejected]
+genius seats confirm <cardId> [--seat <seat>|none] --by <id>
+genius seats reject <cardId> --by <id>
 ```
 
 `categorize --missing` は再蒸留・再 embedding を行わず、既存カード本文
@@ -167,6 +183,12 @@ loader は「example しか無い場合は起動エラー + コピー手順を�
   "feedback": {
     "minimumPoor": 3,
     "poorRatio": 0.6
+  },
+  "outcome": {
+    "followupEnabled": true,
+    "followupDelayDays": 14,  // 判断からこの日数で「結果は?」を出す
+    "followupWindowDays": 7,  // delay + この日数より古い判断には訊かない
+    "maxPerRun": 3
   },
   "cardGroupCache": {
     "hotThreshold": 2,        // 同じ一覧条件を保存し始める参照回数

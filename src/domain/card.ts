@@ -10,8 +10,9 @@ export const visibilitySchema = z.enum(["public", "sensitive"]);
 export const cardTextSchema = z.string().trim().min(1).max(MAX_CARD_TEXT_LENGTH);
 export const cardTagSchema = z.string().trim().min(1).max(MAX_CARD_TAG_LENGTH);
 export const cardTagsSchema = z.array(cardTagSchema).max(MAX_CARD_TAG_COUNT);
+export const MAX_DECISION_AUTHOR_LENGTH = 64;
 /** Stable identifier for the person whose judgment an answer/card records. */
-export const decisionAuthorSchema = z.string().trim().min(1).max(64);
+export const decisionAuthorSchema = z.string().trim().min(1).max(MAX_DECISION_AUTHOR_LENGTH);
 
 export type CardDomain = z.infer<typeof domainSchema>;
 export type CardVisibility = z.infer<typeof visibilitySchema>;

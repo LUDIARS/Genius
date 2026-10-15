@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "contractsDir": "src/contracts",
+  "importFrom": "../contract-runtime.js",
+  "runtimeFile": "src/contract-runtime.ts",
+  "contracts": [
+    {
+      "id": "C-1",
+      "criterion": "C-1 toCardOutcome(row): outcome 行が無い既存カードは null で読め、行があればカード id と統制語彙 (match / mismatch) の verdict を返す",
+      "symbol": "toCardOutcome",
+      "file": "src/domain/outcome.ts",
+      "module": "src/contracts/card-outcome.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-2",
+      "criterion": "C-2 parseOutcomeReply(text, cardJudgment): 1 行目が「不一致」なら mismatch、「一致」なら match として結果と採用した判断を返し、どちらでもない返信は outcome にしない",
+      "symbol": "parseOutcomeReply",
+      "file": "src/outcome/outcome-reply.ts",
+      "module": "src/contracts/outcome-reply.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-3",
+      "criterion": "C-3 followupDueWindow(now, delayDays, windowDays): 判断から delay 日 (既定 14 日) 経ち、delay + window 日より新しい判断だけを「結果は?」の配信対象にする",
+      "symbol": "followupDueWindow",
+      "file": "src/outcome/followup-window.ts",
+      "module": "src/contracts/followup-window.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-4",
+      "criterion": "C-4 summarizeOutcomeStats(rows, query): 席別と全体の件数が一致し、一致率は match / total (記入 0 件は null)、seat 指定時はその席だけを返す",
+      "symbol": "summarizeOutcomeStats",
+      "file": "src/outcome/outcome-stats.ts",
+      "module": "src/contracts/outcome-stats.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-5",
+      "criterion": "C-5 toProposedSeat(label): none は席なしの提案、9 席のラベルはその席の提案にし、語彙外のラベルは提案にしない",
+      "symbol": "toProposedSeat",
+      "file": "src/seats/seat-label.ts",
+      "module": "src/contracts/seat-label.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-6",
+      "criterion": "C-6 planSeatDecision(proposal, decision): 確定待ちの提案だけを人間が確定 / 却下でき、却下は席を付けず、確定は指定席か提案どおりの席を付ける",
+      "symbol": "planSeatDecision",
+      "file": "src/seats/seat-decision.ts",
+      "module": "src/contracts/seat-decision.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-7",
+      "criterion": "C-7 formatOutcomeFollowupText(card, delayDays): 「結果は?」の投稿はカード id を含み、situation / rationale / sourceRef を載せず、sensitive カードは judgment も載せない",
+      "symbol": "formatOutcomeFollowupText",
+      "file": "src/outcome/followup-message.ts",
+      "module": "src/contracts/followup-message.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    }
+  ]
+}

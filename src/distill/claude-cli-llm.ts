@@ -90,9 +90,10 @@ function modelForPurpose(
   model: string,
   sensitiveCheckModel: string,
 ): string {
-  // categorize (backfill classification) rides the cheap sensitive-check model:
-  // it is a low-stakes single-label task over already-distilled card text.
-  return purpose === "sensitive-check" || purpose === "categorize"
+  // categorize / seat-classify (backfill classification) ride the cheap
+  // sensitive-check model: low-stakes single-label tasks over already-distilled
+  // card text, and every seat proposal is confirmed by a human anyway.
+  return purpose === "sensitive-check" || purpose === "categorize" || purpose === "seat-classify"
     ? sensitiveCheckModel
     : model;
 }

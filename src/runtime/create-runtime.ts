@@ -27,6 +27,9 @@ import { SqliteIngestFailureStore } from "../ingest/sqlite-ingest-failure-store.
 import { SqliteIngestRunStore, SqliteIngestStateStore } from "../ingest/sqlite-ingest-stores.js";
 import { CardFeedbackRepository } from "../feedback/feedback-repository.js";
 import { CardFeedbackService } from "../feedback/feedback-service.js";
+import { createOutcomeFollowupRelay } from "../outcome/create-outcome-followup-relay.js";
+import { CardOutcomeRepository } from "../outcome/outcome-repository.js";
+import { CardOutcomeService } from "../outcome/outcome-service.js";
 import { createQueryLogStore } from "../query/create-query-log-store.js";
 import { QueryService } from "../query/query-service.js";
 import { ConcordiaQuestionChannel } from "../questions/concordia-question-channel.js";
@@ -45,6 +48,8 @@ import { SqliteDistillationCardGateway } from "../services/distillation-card-gat
 import { HealthService } from "../services/health-service.js";
 import { QuestionQueueService } from "../services/question-queue-service.js";
 import { SqliteQueryVectorPort } from "../services/query-vector-port.js";
+import { SeatProposalService } from "../seats/seat-proposal-service.js";
+import { SeatRepository } from "../seats/seat-repository.js";
 import { StatsRepository } from "../stats/stats-repository.js";
 
 export interface GeniusRuntime {
@@ -157,6 +162,15 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       llm,
       queue: questionQueue,
     });
+    // outcome / 席は CardRepository を直接見る (feedback と同じ理由: 再埋め込み判定が要らない)。
+    // @implements SPEC-GENIUS-OUTCOME-RECORD
+    const outcome = new CardOutcomeService(cardsRepository, new CardOutcomeRepository(database));
+    // @implements SPEC-GENIUS-SEAT-TAG
+    const seats = new SeatProposalService({
+      seats: new SeatRepository(database),
+      cards: cardsRepository,
+      classifier,
+    });
     const readers = createReaderRegistry(config.sources satisfies ReaderFactoryInputs);
     // @implements SPEC-GENIUS-ACTIVE-QUESTION-INGEST
     const completionHook = new IngestQuestionHook({
@@ -164,6 +178,13 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       queryLog,
       retentionDays: config.queryLog.retentionDays,
       relay: createQuestionRelay(config, questionQueue, questionAnswers),
+      // @implements SPEC-GENIUS-OUTCOME-FOLLOWUP
+      outcomeFollowups: createOutcomeFollowupRelay({
+        config,
+        database,
+        cards: cardsRepository,
+        outcomes: outcome,
+      }),
     });
     const ingest = new IngestService({
       completionHook,
@@ -193,6 +214,8 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
       ingest,
       stats,
       feedback,
+      outcome,
+      seats,
       questions: new QuestionQueueService(questionQueue, questionAnswers),
     };
     let closePromise: Promise<void> | null = null;

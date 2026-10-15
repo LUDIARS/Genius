@@ -220,6 +220,12 @@ describe("loadConfig", () => {
     expect(config.queryLog).toEqual({ enabled: true, retentionDays: 30 });
     expect(config.feedback).toEqual({ minimumPoor: 3, poorRatio: 0.6 });
     expect(config.cardGroupCache).toEqual({ hotThreshold: 2, maxEntries: 64 });
+    expect(config.outcome).toEqual({
+      followupEnabled: true,
+      followupDelayDays: 14,
+      followupWindowDays: 7,
+      maxPerRun: 3,
+    });
   });
 
   it("rejects invalid optional service values instead of falling back", () => {
@@ -244,6 +250,15 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({
         configPath: writeConfig(fixtureDirectory(), invalidFeedback),
+        environment: {},
+      }),
+    ).toThrowError(/Invalid config/);
+
+    const invalidOutcome = validConfig();
+    invalidOutcome.outcome = { followupDelayDays: 0 };
+    expect(() =>
+      loadConfig({
+        configPath: writeConfig(fixtureDirectory(), invalidOutcome),
         environment: {},
       }),
     ).toThrowError(/Invalid config/);

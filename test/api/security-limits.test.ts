@@ -62,6 +62,19 @@ const services: ApiServices = {
     recent() { return []; },
     isArchivedByFeedback() { return false; },
   },
+  outcome: {
+    record() { throw new Error("outcome must not run for rejected input"); },
+    get() { return null; },
+    getMany() { return new Map(); },
+    stats() { throw new Error("outcome stats must not run for rejected input"); },
+  },
+  seats: {
+    async generate() { throw new Error("seat proposals must not run for rejected input"); },
+    list() { return []; },
+    decide() { throw new Error("seat decisions must not run for rejected input"); },
+    coverage() { return { activeCards: 0, seated: 0, confirmedNoSeat: 0, pendingProposals: 0 }; },
+    seatsOf() { return new Map(); },
+  },
   questions: {
     async list() { return []; },
     async get() { return null; },

@@ -176,6 +176,55 @@ rating 別の件数だけとする。
 
 インデックス: `(card_id, created_at)`。
 
+## card_outcomes / card_outcome_followups / card_seats / card_seat_proposals — outcome と席 (migration 011)
+
+判断の結果と席タグ (spec/feature/judgment-outcome.md)。いずれも `clone_cards` に列を足さず
+別テーブルで持ち、カード削除時は cascade する。行の無いカード = 未記入 / 席なし (null で読む)。
+
+### card_outcomes
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| card_id | TEXT PK | `clone_cards.id` |
+| adopted_decision | TEXT | 実際に採用した判断 (1〜16384 文字) |
+| actual_result | TEXT | 実際の結果 (1〜16384 文字) |
+| verdict | TEXT | `match` / `mismatch` (CHECK) |
+| recorded_by | TEXT | 記入者 (1〜64 文字) |
+| recorded_via | TEXT | `api` / `ui` / `cli` / `discord` (CHECK) |
+| recorded_at | INTEGER | epoch ms (サーバ時計) |
+
+### card_outcome_followups
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| card_id | TEXT PK | 1 枚に 1 回だけ訊く |
+| discord_message_id | TEXT UNIQUE | genius チャンネルへの投稿 id |
+| asked_at | INTEGER | 配信時刻 (epoch ms) |
+| answered_at | INTEGER NULL | 返信で outcome を埋めた時刻 |
+
+インデックス: 未回答 (`answered_at IS NULL`) の `asked_at` 部分索引。
+
+### card_seats
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| card_id | TEXT PK | 人間が確定した席を持つカード |
+| seat | TEXT | 9 席 (CHECK、正本 `src/domain/seat.ts`) |
+| confirmed_by | TEXT | 確定者 |
+| confirmed_at | INTEGER | epoch ms |
+
+### card_seat_proposals
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| card_id | TEXT PK | 1 枚に 1 提案 |
+| proposed_seat | TEXT NULL | 提案された席。NULL = どの席にも当たらない |
+| confidence | REAL | 判定の確信度 0〜1 |
+| status | TEXT | `proposed` / `confirmed` / `rejected` |
+| decided_seat | TEXT NULL | 人間が確定した席 (NULL のまま confirmed = 席なしを確定) |
+| decided_by / decided_at | TEXT NULL / INTEGER NULL | `proposed` のときだけ NULL (CHECK) |
+| created_at | INTEGER | epoch ms |
+
 ## questions / question_targets / question_answers — 補完質問 (migration 006 + 007 + 010)
 
 能動学習の質問キュー (spec/feature/active-questioning.md §2.1)。統制語彙
@@ -239,6 +288,8 @@ SHA-256・model・format version とベクトルだけを保持する。カー�
 | embedding cache | derived | 判断カード | ローカル SQLite | 必要 | 原文を保存せず hash と vector のみ |
 | query_log | user | Genius | ローカル SQLite | 必要 | loopback のみ。公開 export 禁止・カード DTO に出さない・保持期間付き (既定 30 日) |
 | card_feedback | user | Genius | ローカル SQLite | 必要 | loopback / アクセス制御済み front door のみ。note/source は公開 export・カード DTO 禁止。DTO は集計のみ |
+| card_outcomes / followups | user | Genius | ローカル SQLite | 必要 | loopback / アクセス制御済み front door のみ。公開 export 禁止。genius チャンネルへはカード id と public カードの judgment 抜粋だけを送出 |
+| card_seats / proposals | user | Genius | ローカル SQLite | 必要 | loopback のみ。sensitive カードの分類は local-only 判定 |
 | questions / answers | user | Genius | ローカル SQLite | 必要 | loopback のみ。専用 Genius channel へ送出可。回答者の Discord user id は判断の帰属にだけ使用し、ログ・公開 export へ出さない |
 
 カード本文は neco 個人の判断記録であり、この DB 自体がローカル限定の個人

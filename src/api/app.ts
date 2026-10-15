@@ -9,7 +9,9 @@ import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerHealthRoute } from "./routes/health.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerQueryRoute } from "./routes/query.js";
+import { registerOutcomeRoutes } from "./routes/outcome.js";
 import { registerQuestionRoutes } from "./routes/questions.js";
+import { registerSeatRoutes } from "./routes/seats.js";
 import { registerStatsRoutes } from "./routes/stats.js";
 import { registerUiRoutes } from "./routes/ui.js";
 import { StaticAssetDirectory } from "./ui/static-asset-directory.js";
@@ -43,8 +45,19 @@ export function createApp(services: ApiServices, options: CreateAppOptions = {})
   registerUiRoutes(app, new StaticAssetDirectory(options.uiRoot ?? resolveUiRoot()));
   registerHealthRoute(app, services.health);
   registerQueryRoute(app, services.query, services.categories);
-  registerCardRoutes(app, services.cards, services.categories, services.feedback);
+  registerCardRoutes(
+    app,
+    services.cards,
+    services.categories,
+    services.feedback,
+    services.outcome,
+    services.seats,
+  );
   registerFeedbackRoutes(app, services.feedback);
+  // @implements SPEC-GENIUS-OUTCOME-RECORD
+  registerOutcomeRoutes(app, services.outcome);
+  // @implements SPEC-GENIUS-SEAT-TAG
+  registerSeatRoutes(app, services.seats);
   registerCategoryRoutes(app, services.categories);
   registerIngestRoutes(app, services.ingest);
   registerStatsRoutes(app, services.stats, services.categories);

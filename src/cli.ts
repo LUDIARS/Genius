@@ -21,6 +21,9 @@ import { OllamaEmbeddingClient } from "./embedding/ollama-client.js";
 import { ReembedService } from "./embedding/reembed.js";
 import { VectorStore } from "./embedding/vector-store.js";
 import { sourceNameSchema, type SourceName } from "./readers/source-reader.js";
+import { runOutcomeCommand } from "./commands/outcome-commands.js";
+import { requestJson } from "./commands/request-json.js";
+import { runSeatsCommand } from "./commands/seat-commands.js";
 import { CategorizeBackfillService } from "./services/categorize-backfill.js";
 
 const ingestStartSchema = z.object({ id: z.string().min(1), status: z.literal("running") });
@@ -58,6 +61,10 @@ export async function runCli(
       return runCategorize(argv.slice(1), config, stdout);
     case "feedback":
       return runFeedback(argv.slice(1), baseUrl, fetchImplementation, stdout);
+    case "outcome":
+      return runOutcomeCommand(argv.slice(1), { config, baseUrl, fetch: fetchImplementation, stdout });
+    case "seats":
+      return runSeatsCommand(argv.slice(1), { config, baseUrl, fetch: fetchImplementation, stdout });
     default:
       throw new Error(`Unknown command: ${command}\n${usage()}`);
   }
@@ -236,23 +243,6 @@ async function runCategorize(
   }
 }
 
-async function requestJson(
-  url: URL,
-  fetchImplementation: typeof globalThis.fetch,
-  init: RequestInit,
-): Promise<unknown> {
-  const response = await fetchImplementation(url, { ...init, redirect: "error" });
-  if (!response.ok) {
-    throw new Error(`Genius API request failed with HTTP ${response.status}`);
-  }
-  const body = await response.text();
-  try {
-    return JSON.parse(body) as unknown;
-  } catch (error) {
-    throw new Error("Genius API returned invalid JSON", { cause: error });
-  }
-}
-
 function parseCategories(raw: string): string[] {
   const values = raw.split(",").map((value) => value.trim()).filter(Boolean);
   if (values.length === 0) throw new Error("--categories must contain at least one category");
@@ -330,6 +320,14 @@ function usage(): string {
     "  genius categorize --missing   # backfill categories for cards without one",
     `  genius feedback <cardId> <${CARD_FEEDBACK_RATINGS.join("|")}>` +
       " [--note <text>] [--source <name>] [--query-id <id>]",
+    "  genius outcome set <cardId> --verdict match|mismatch --adopted <text> --result <text> --by <id>",
+    "  genius outcome get <cardId>",
+    "  genius outcome stats [--seat <seat>] [--from <iso|ms>] [--to <iso|ms>]",
+    "  genius outcome followup   # post due \"結果は?\" follow-ups and ingest replies once",
+    "  genius seats propose [--limit 100]   # classify unseated cards into proposals",
+    "  genius seats list [--status proposed|confirmed|rejected] [--limit 50] [--offset 0]",
+    "  genius seats confirm <cardId> [--seat <seat>|none] --by <id>",
+    "  genius seats reject <cardId> --by <id>",
     "",
   ].join("\n");
 }

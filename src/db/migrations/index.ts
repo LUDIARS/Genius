@@ -8,6 +8,7 @@ import { questionTargetSemanticsMigration } from "./007-question-target-semantic
 import { cardFeedbackMigration } from "./008-card-feedback.js";
 import { issueDiscoveryCategoryMigration } from "./009-issue-discovery-category.js";
 import { questionDeciderMigration } from "./010-question-decider.js";
+import { cardOutcomesAndSeatsMigration } from "./011-card-outcomes-and-seats.js";
 import type { Migration } from "./types.js";
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -21,6 +22,7 @@ export const MIGRATIONS: readonly Migration[] = [
   cardFeedbackMigration,
   issueDiscoveryCategoryMigration,
   questionDeciderMigration,
+  cardOutcomesAndSeatsMigration,
 ];
 
 export type { Migration } from "./types.js";

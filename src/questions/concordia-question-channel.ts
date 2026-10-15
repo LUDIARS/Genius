@@ -130,11 +130,22 @@ export class ConcordiaQuestionChannel {
     if (question.gapKind === "contradiction") {
       throw new UnsupportedQuestionEgressError(question.id);
     }
+    return this.post(formatQuestionText(question));
+  }
+
+  /**
+   * Posts already-formatted text to the genius channel and returns its message
+   * id as text. Callers own what the text may contain: the outcome follow-up
+   * (spec/feature/judgment-outcome.md §3.2) reuses this channel and applies its
+   * own egress rule before calling here.
+   * @implements SPEC-GENIUS-ACTIVE-QUESTION-DISCORD
+   */
+  async post(text: string): Promise<string> {
     const body = {
       channel: CHANNEL,
       author_label: AUTHOR_LABEL,
       session_id: null,
-      text: formatQuestionText(question),
+      text: text.length <= MAX_TEXT_LENGTH ? text : `${text.slice(0, MAX_TEXT_LENGTH - 1)}…`,
     };
     const payload = await this.#request(this.#chatUrl, {
       method: "POST",

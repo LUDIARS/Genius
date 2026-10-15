@@ -50,6 +50,12 @@
     "minimumPoor": 3,
     "poorRatio": 0.6
   },
+  "outcome": {
+    "followupEnabled": true,
+    "followupDelayDays": 14,
+    "followupWindowDays": 7,
+    "maxPerRun": 3
+  },
   "cardGroupCache": {
     "hotThreshold": 2,
     "maxEntries": 64

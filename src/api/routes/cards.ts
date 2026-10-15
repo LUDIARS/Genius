@@ -75,16 +75,25 @@ export function registerCardRoutes(
   cards: ApiServices["cards"],
   categories: ApiServices["categories"],
   feedback: ApiServices["feedback"],
+  outcome: ApiServices["outcome"],
+  seats: ApiServices["seats"],
 ): void {
   app.get("/api/clone/cards", async (c) => {
     const input = parseOrThrow(listQuerySchema, c.req.query());
     await assertKnownCategories(categories, input.category === undefined ? [] : [input.category]);
     const listed = await cards.list(input);
-    const summaries = feedback.summaries(listed.map((card) => card.id));
+    const ids = listed.map((card) => card.id);
+    const summaries = feedback.summaries(ids);
+    // outcome / 席も一覧 1 回につき 1 本ずつの一括取得 (カード 1 枚ごとに引かない)。
+    // 既存カードは outcome / seat とも null (spec/feature/judgment-outcome.md §2)。
+    const outcomes = outcome.getMany(ids);
+    const seatMap = seats.seatsOf(ids);
     return c.json({
       cards: listed.map((card) => ({
         ...card,
         feedback: summaries.get(card.id) ?? EMPTY_CARD_FEEDBACK_SUMMARY,
+        outcome: outcomes.get(card.id) ?? null,
+        seat: seatMap.get(card.id) ?? null,
       })),
     });
   });
@@ -92,7 +101,12 @@ export function registerCardRoutes(
   app.get("/api/clone/cards/:id", async (c) => {
     const card = await cards.get(c.req.param("id"));
     return card
-      ? c.json({ ...card, feedback: feedback.summary(card.id) })
+      ? c.json({
+        ...card,
+        feedback: feedback.summary(card.id),
+        outcome: outcome.get(card.id),
+        seat: seats.seatsOf([card.id]).get(card.id) ?? null,
+      })
       : c.json({ error: "Card not found" }, 404);
   });
 

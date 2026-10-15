@@ -12,6 +12,11 @@ export interface IngestQuestionHookOptions {
   retentionDays?: number | null;
   /** null = Discord 経路無効 (Q6)。有効なら生成後に送信と返信取り込みを回す。 */
   relay?: { run(): Promise<{ asked: number; answered: number }> } | null;
+  /**
+   * null = 「結果は?」の後日配信が無効 (spec/feature/judgment-outcome.md §3)。
+   * 補完質問と同じ genius チャンネルを使うので、同じ ingest 完了時に回す。
+   */
+  outcomeFollowups?: { run(): Promise<{ asked: number; recorded: number }> } | null;
   warningSink?: (message: string) => void;
 }
 
@@ -31,6 +36,7 @@ export class IngestQuestionHook implements IngestCompletionHook {
   readonly #queryLog: SqliteQueryLogStore | null;
   readonly #retentionDays: number | null;
   readonly #relay: { run(): Promise<{ asked: number; answered: number }> } | null;
+  readonly #outcomeFollowups: { run(): Promise<{ asked: number; recorded: number }> } | null;
   readonly #warningSink: (message: string) => void;
 
   constructor(options: IngestQuestionHookOptions) {
@@ -38,6 +44,7 @@ export class IngestQuestionHook implements IngestCompletionHook {
     this.#queryLog = options.queryLog ?? null;
     this.#retentionDays = options.retentionDays ?? null;
     this.#relay = options.relay ?? null;
+    this.#outcomeFollowups = options.outcomeFollowups ?? null;
     this.#warningSink = options.warningSink ?? ((message) => process.stderr.write(`${message}\n`));
   }
 
@@ -50,6 +57,25 @@ export class IngestQuestionHook implements IngestCompletionHook {
       // Existing replies remain useful even when this run could not generate
       // new questions, so collection must not share generation's failure fate.
       await this.#relayToDiscord();
+      await this.#runOutcomeFollowups();
+    }
+  }
+
+  /**
+   * 「結果は?」の配信と返信取り込み。補完質問の relay とは独立に失敗させる
+   * (片方の障害でもう片方を止めない)。
+   * @implements SPEC-GENIUS-OUTCOME-FOLLOWUP
+   */
+  async #runOutcomeFollowups(): Promise<void> {
+    if (this.#outcomeFollowups === null) return;
+    try {
+      const { asked, recorded } = await this.#outcomeFollowups.run();
+      if (asked > 0 || recorded > 0) {
+        this.#warningSink(`[outcome] follow-ups: asked ${asked}, recorded ${recorded}`);
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.#warningSink(`[outcome] follow-up relay failed: ${detail}`);
     }
   }
 

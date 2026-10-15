@@ -135,7 +135,23 @@ export interface GeniusConfig {
   contradiction: ContradictionConfig;
   queryLog: QueryLogConfig;
   feedback: FeedbackConfig;
+  outcome: OutcomeConfig;
   cardGroupCache: CardGroupCacheConfig;
+}
+
+/**
+ * 「結果は?」の後日配信 (spec/feature/judgment-outcome.md §3)。
+ * 送り先と判断者は補完質問と共有する (notify.concordiaBaseUrl /
+ * questions.discordEnabled / questions.deciderDiscordUserId)。
+ */
+export interface OutcomeConfig {
+  followupEnabled: boolean;
+  /** 判断 (カード作成) からこの日数が経ったら訊く。 */
+  followupDelayDays: number;
+  /** delay を過ぎてからこの日数より古い判断には訊かない (導入時の一斉配信防止)。 */
+  followupWindowDays: number;
+  /** 1 回の配信で訊く上限。 */
+  maxPerRun: number;
 }
 
 /** 評価によるアーカイブの閾値 (spec/feature/card-feedback.md §4)。 */

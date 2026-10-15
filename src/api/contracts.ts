@@ -13,6 +13,20 @@ import type {
   RecordCardFeedbackInput,
 } from "../domain/feedback.js";
 import type { RecordFeedbackResult } from "../feedback/feedback-service.js";
+import type {
+  CardOutcome,
+  OutcomeRecordedVia,
+  RecordOutcomeInput,
+} from "../domain/outcome.js";
+import type {
+  JudgmentSeat,
+  SeatDecision,
+  SeatProposal,
+  SeatProposalStatus,
+} from "../domain/seat.js";
+import type { OutcomeStats, OutcomeStatsQuery } from "../outcome/outcome-stats.js";
+import type { GenerateSeatProposalsResult } from "../seats/seat-proposal-service.js";
+import type { SeatCoverage } from "../seats/seat-repository.js";
 import type { CardSortField, CardSortOrder } from "../cards/card-repository.js";
 import type { SupersedeChain } from "../cards/supersede-chain.js";
 import type { CardCategory, CreateCategoryInput } from "../domain/category.js";
@@ -153,6 +167,27 @@ export interface ApiServices {
     summaries(cardIds: readonly string[]): Map<string, CardFeedbackSummary>;
     recent(cardId: string, limit?: number): CardFeedbackEntry[];
     isArchivedByFeedback(cardId: string): boolean;
+  };
+  /**
+   * 判断の outcome (spec/feature/judgment-outcome.md §2・§5)。
+   * @implements SPEC-GENIUS-OUTCOME-RECORD
+   */
+  outcome: {
+    record(cardId: string, input: RecordOutcomeInput, via: OutcomeRecordedVia): CardOutcome;
+    get(cardId: string): CardOutcome | null;
+    getMany(cardIds: readonly string[]): Map<string, CardOutcome>;
+    stats(query: OutcomeStatsQuery): OutcomeStats;
+  };
+  /**
+   * 席タグと分類提案 (spec/feature/judgment-outcome.md §4)。
+   * @implements SPEC-GENIUS-SEAT-TAG
+   */
+  seats: {
+    generate(limit: number): Promise<GenerateSeatProposalsResult>;
+    list(status: SeatProposalStatus | null, limit: number, offset: number): SeatProposal[];
+    decide(cardId: string, decision: SeatDecision): SeatProposal;
+    coverage(): SeatCoverage;
+    seatsOf(cardIds: readonly string[]): Map<string, JudgmentSeat>;
   };
   /**
    * Active-questioning queue (spec/feature/active-questioning.md §3.1・§4).

@@ -150,6 +150,22 @@ const configSchema = z
       .strict()
       .optional()
       .default({ minimumPoor: 3, poorRatio: 0.6 }),
+    // 「結果は?」の後日配信 (spec/feature/judgment-outcome.md §3)。節ごと省略可。
+    outcome: z
+      .object({
+        followupEnabled: z.boolean().default(true),
+        followupDelayDays: z.number().int().min(1).max(365).default(14),
+        followupWindowDays: z.number().int().min(1).max(365).default(7),
+        maxPerRun: z.number().int().min(1).max(50).default(3),
+      })
+      .strict()
+      .optional()
+      .default({
+        followupEnabled: true,
+        followupDelayDays: 14,
+        followupWindowDays: 7,
+        maxPerRun: 3,
+      }),
     // 頻出カードグループのキャッシュ (spec/feature/operations.md §10)。
     cardGroupCache: z
       .object({
