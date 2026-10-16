@@ -33,11 +33,11 @@ services:
     restart_policy: on-failure
     health:
       type: http
-      # localhost だと Node の fetch が ::1 を先に試して待たされ、1 秒の probe 上限に対して
-      # /healthz (Ollama 疎通を含み ~0.6 秒) が間に合わず健全でも failed になる。127.0.0.1 固定。
+      # IPv6 の名前解決差を避けるため loopback IPv4 を使う。
+      # /healthz は I/O 無しの生存確認。Ollama 等の依存確認は /readyz が担当する。
       url: http://127.0.0.1:4230/healthz
       interval_sec: 30
-      # 起動直後の /healthz は埋め込みモデルのウォームアップを待つため既定 10 秒では足りない。
+      # 起動準備への猶予。/healthz 自体はモデルのウォームアップを待たない。
       grace_period_sec: 30
     provides:
       GENIUS_URL: http://${host}:${port}
