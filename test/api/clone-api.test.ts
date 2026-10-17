@@ -90,6 +90,7 @@ describe("clone API", () => {
       cardsMerged: 0,
       skipped: 0,
       failedDocuments: 0,
+      elegantia: null,
       startedAt: 1,
       finishedAt: null,
       error: null,

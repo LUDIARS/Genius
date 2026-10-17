@@ -17,6 +17,7 @@ const INGEST_RUN = {
   cardsMerged: 0,
   skipped: 1,
   failedDocuments: 1,
+  elegantia: { registered: 1, failed: 0 },
   startedAt: 1,
   finishedAt: 2,
   error: null,
@@ -147,6 +148,16 @@ describe("GeniusHttpClient", () => {
       "http://127.0.0.1:4230/api/clone/ingest/runs/01J00000000000000000000001",
     );
     expect(init?.redirect).toBe("error");
+  });
+
+  it("reads a run from a server without the Elegantia counters as null", async () => {
+    const { elegantia: _elegantia, ...legacy } = INGEST_RUN;
+    const client = new GeniusHttpClient({
+      baseUrl: "http://127.0.0.1:4230",
+      fetch: vi.fn(async () => new Response(JSON.stringify(legacy))) as typeof fetch,
+    });
+
+    await expect(client.getIngestRun("run-1")).resolves.toEqual({ ...legacy, elegantia: null });
   });
 
   it("rejects an ingest run status that omits the failure counters", async () => {

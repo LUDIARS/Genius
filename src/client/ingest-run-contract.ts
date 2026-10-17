@@ -26,6 +26,15 @@ export const ingestRunViewSchema = z.object({
   cardsMerged: z.number().int().nonnegative(),
   skipped: z.number().int().nonnegative(),
   failedDocuments: z.number().int().nonnegative(),
+  // Elegantia 登録の件数 (spec/feature/elegantia-route.md §5)。連携導入前の
+  // サーバは返さないので省略は null として読む。
+  elegantia: z
+    .object({
+      registered: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+    })
+    .nullable()
+    .default(null),
   startedAt: z.number(),
   finishedAt: z.number().nullable(),
   error: z.string().nullable(),

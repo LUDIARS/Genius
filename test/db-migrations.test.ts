@@ -137,7 +137,7 @@ describe("database migrations", () => {
         .get("issue-discovery")?.count,
     ).toBe(0);
 
-    expect(runMigrations(database)).toEqual([9, 10, 11]);
+    expect(runMigrations(database)).toEqual([9, 10, 11, 12]);
     expect(
       database
         .prepare<[string], { name: string; description: string }>(
@@ -179,7 +179,7 @@ describe("database migrations", () => {
       VALUES ('A1', 'Q1', 'a', 'discord', NULL, 1);
     `);
 
-    expect(runMigrations(database)).toEqual([10, 11]);
+    expect(runMigrations(database)).toEqual([10, 11, 12]);
     expect(database.prepare("SELECT decided_by FROM clone_cards WHERE id = 'CARD1'").get())
       .toEqual({ decided_by: null });
     expect(database.prepare("SELECT answered_by FROM question_answers WHERE id = 'A1'").get())

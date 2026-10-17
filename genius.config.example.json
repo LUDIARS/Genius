@@ -60,6 +60,13 @@
     "hotThreshold": 2,
     "maxEntries": 64
   },
+  "elegantia": {
+    "enabled": true,
+    "catalogPath": null,
+    "threshold": 0.7,
+    "timeoutMs": 10000,
+    "maxPerRun": 50
+  },
   "sources": {
     "memoryDir": null,
     "sessionLogsDir": null,

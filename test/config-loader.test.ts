@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -226,6 +226,55 @@ describe("loadConfig", () => {
       followupWindowDays: 7,
       maxPerRun: 3,
     });
+  });
+
+  it("leaves the Elegantia route disabled when the section is absent", () => {
+    const config = loadConfig({ configPath: writeConfig(fixtureDirectory()), environment: {} });
+    expect(config.elegantia).toEqual({
+      baseUrl: null,
+      catalogPath: null,
+      threshold: 0.7,
+      timeoutMs: 10_000,
+      maxPerRun: 50,
+    });
+  });
+
+  it("resolves the Elegantia port from the owning Excubitor catalog", () => {
+    const root = fixtureDirectory();
+    const geniusDirectory = join(root, "Genius");
+    mkdirSync(geniusDirectory);
+    mkdirSync(join(root, "Elegantia"));
+    writeFileSync(
+      join(root, "Elegantia", "excubitor.catalog.yaml"),
+      "services:\n  - code: elegantia\n    port: 17999\n    health:\n      url: http://127.0.0.1:1/x\n",
+      "utf8",
+    );
+    const config = validConfig();
+    config.elegantia = { enabled: true };
+
+    const loaded = loadConfig({ configPath: writeConfig(geniusDirectory, config), environment: {} });
+
+    expect(loaded.elegantia.baseUrl).toBe("http://127.0.0.1:17999");
+    expect(loaded.elegantia.catalogPath).toBe(join(root, "Elegantia", "excubitor.catalog.yaml"));
+  });
+
+  it("fails fast when the Elegantia route is enabled but the catalog cannot resolve it", () => {
+    const directory = fixtureDirectory();
+    const missing = validConfig();
+    missing.elegantia = { enabled: true, catalogPath: "./absent.yaml" };
+    expect(() => loadConfig({ configPath: writeConfig(directory, missing), environment: {} }))
+      .toThrowError(/Excubitor catalog was not found/);
+
+    writeFileSync(join(directory, "catalog.yaml"), "services:\n  - code: other\n    port: 1\n", "utf8");
+    const noEntry = validConfig();
+    noEntry.elegantia = { enabled: true, catalogPath: "./catalog.yaml" };
+    expect(() => loadConfig({ configPath: writeConfig(directory, noEntry), environment: {} }))
+      .toThrowError(ConfigError);
+
+    const withPort = validConfig();
+    withPort.elegantia = { enabled: true, port: 17999 };
+    expect(() => loadConfig({ configPath: writeConfig(directory, withPort), environment: {} }))
+      .toThrowError(/Invalid config/);
   });
 
   it("rejects invalid optional service values instead of falling back", () => {

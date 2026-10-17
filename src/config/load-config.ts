@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
 import { normalizeAllowedOrigin } from "./allowed-origin.js";
+import { resolveElegantiaConfig } from "./elegantia-resolution.js";
 import { ConfigError } from "./errors.js";
 import { normalizeLoopbackHttpUrl } from "./loopback-url.js";
 import type { LoadedGeniusConfig, SourceConfig } from "./types.js";
@@ -175,6 +176,26 @@ const configSchema = z
       .strict()
       .optional()
       .default({ hotThreshold: 2, maxEntries: 64 }),
+    // Elegantia 連携 (spec/feature/elegantia-route.md)。節が無い既存 config は
+    // 無効で動くが、無言にはせず createRuntime が起動時に 1 行明示する。
+    // ポートは書かせない — Excubitor catalog から解決する。
+    elegantia: z
+      .object({
+        enabled: z.boolean().default(false),
+        catalogPath: z.string().trim().min(1).nullable().default(null),
+        threshold: z.number().gt(0).max(1).default(0.7),
+        timeoutMs: z.number().int().min(1).default(10_000),
+        maxPerRun: z.number().int().min(1).max(1_000).default(50),
+      })
+      .strict()
+      .optional()
+      .default({
+        enabled: false,
+        catalogPath: null,
+        threshold: 0.7,
+        timeoutMs: 10_000,
+        maxPerRun: 50,
+      }),
   })
   .strict();
 
@@ -492,6 +513,7 @@ export function loadConfig(options: LoadConfigOptions = {}): LoadedGeniusConfig 
               "notify.concordiaBaseUrl",
             ),
     },
+    elegantia: resolveElegantiaConfig(parsed.data.elegantia, configPath),
     configPath,
   };
 }

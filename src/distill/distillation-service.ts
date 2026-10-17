@@ -6,6 +6,7 @@ import {
   type CreateCardInput,
   type DistilledCard,
 } from "../domain/card.js";
+import type { SavedCardSink } from "../elegantia/quality-router.js";
 import type { SourceDocument } from "../readers/source-reader.js";
 import { categoryEnumSchema } from "./category-vocabulary.js";
 import type { DistillLlm } from "./distill-llm.js";
@@ -50,6 +51,11 @@ export interface DistillationServiceOptions {
   llm: DistillLlm;
   prompt: string;
   publicCardGate: PublicCardGate;
+  /**
+   * 保存した (新規・統合) カードの受け口。null = Elegantia 連携なし。
+   * 受け口は outbox へ積むだけで、外部への送信は ingest 末尾で行う。
+   */
+  savedCardSink?: SavedCardSink | null;
 }
 
 export class DistillationService {
@@ -59,6 +65,7 @@ export class DistillationService {
   readonly #llm: DistillLlm;
   readonly #prompt: string;
   readonly #publicCardGate: PublicCardGate;
+  readonly #savedCardSink: SavedCardSink | null;
 
   constructor(options: DistillationServiceOptions) {
     if (options.prompt.trim().length === 0) throw new Error("Distillation prompt must not be empty");
@@ -68,6 +75,7 @@ export class DistillationService {
     this.#llm = options.llm;
     this.#prompt = options.prompt;
     this.#publicCardGate = options.publicCardGate;
+    this.#savedCardSink = options.savedCardSink ?? null;
   }
 
   async distill(document: SourceDocument): Promise<DistillationResult> {
@@ -88,20 +96,26 @@ export class DistillationService {
     for (const candidate of response.cards) {
       const safeCandidate = await this.#publicCardGate.check(candidate);
       const sourceRef = contentAnchoredSourceRef(document.sourceRef, safeCandidate);
-      if (await this.#cardGateway.findBySourceRef(sourceRef)) {
+      const existing = await this.#cardGateway.findBySourceRef(sourceRef);
+      if (existing) {
+        // 積み直しは冪等。前回の保存後に outbox へ積めずに落ちた文書を
+        // 再処理したとき、登録候補から漏らさないため。
+        this.#savedCardSink?.onCardSaved(existing);
         continue;
       }
       const duplicate = await this.#cardGateway.findDuplicate(safeCandidate, 0.9);
       if (!duplicate) {
-        await this.#cardGateway.saveChecked(toCreateInput(safeCandidate, document, sourceRef));
+        this.#notifySaved(
+          await this.#cardGateway.saveChecked(toCreateInput(safeCandidate, document, sourceRef)),
+        );
         cardsCreated += 1;
         continue;
       }
 
       const merge = await this.#requestMerge(duplicate, safeCandidate);
       if (!merge.merge) {
-        await this.#cardGateway.saveChecked(
-          toCreateInput(safeCandidate, document, sourceRef),
+        this.#notifySaved(
+          await this.#cardGateway.saveChecked(toCreateInput(safeCandidate, document, sourceRef)),
         );
         cardsCreated += 1;
         continue;
@@ -112,15 +126,21 @@ export class DistillationService {
         visibility: safeCandidate.visibility,
       } satisfies DistilledCard;
       const safeMerged = await this.#publicCardGate.check(merged);
-      await this.#cardGateway.replaceChecked(
-        toCreateInput(safeMerged, document, sourceRef),
-        duplicate.id,
+      this.#notifySaved(
+        await this.#cardGateway.replaceChecked(
+          toCreateInput(safeMerged, document, sourceRef),
+          duplicate.id,
+        ),
       );
       cardsCreated += 1;
       cardsMerged += 1;
     }
 
     return { cardsCreated, cardsMerged };
+  }
+
+  #notifySaved(card: CloneCard): void {
+    this.#savedCardSink?.onCardSaved(card);
   }
 
   #requestMerge(

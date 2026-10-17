@@ -29,9 +29,30 @@ export interface IngestRunRecord {
   skipped: number;
   /** 文書単位で隔離されたエラー件数。0 なら completed、1 以上なら completed-with-errors。 */
   failedDocuments: number;
+  /**
+   * この run の末尾で行った Elegantia 登録の件数 (spec/feature/elegantia-route.md §5)。
+   * null = 連携無効・run が flush 前に終わった・連携導入前の run。
+   */
+  elegantia: IngestElegantiaStats | null;
   startedAt: number;
   finishedAt: number | null;
   error: string | null;
+}
+
+export interface IngestElegantiaStats {
+  /** Elegantia に登録できた件数 (既に登録済みで 200 が返ったものを含む)。 */
+  registered: number;
+  /** 判定または送信に失敗した件数。outbox に残り、次回の ingest で再試行する。 */
+  failed: number;
+}
+
+/**
+ * ingest 末尾で outbox の Elegantia 登録を流す (spec/feature/elegantia-route.md)。
+ * 個々の失敗は outbox に記録して件数で返す。throw は outbox 自体が読めない等の
+ * 異常で、ingest の結果は覆さない (警告とログに残す)。
+ */
+export interface IngestElegantiaRoute {
+  flush(): Promise<IngestElegantiaStats>;
 }
 
 export interface IngestStateStore {
@@ -54,6 +75,7 @@ export interface IngestRunStore {
     totals: IngestTotals,
     status: "completed" | "completed-with-errors",
     failedDocuments: number,
+    elegantia?: IngestElegantiaStats | null,
   ): void;
   /** failedDocuments は必須 — 隔離済みの件数を無言で 0 に落とさない。 */
   fail(id: string, totals: IngestTotals, error: Error, failedDocuments: number): void;
@@ -186,8 +208,11 @@ export interface IngestLogEntry extends IngestTotals {
     | "run-completed"
     | "run-completed-with-errors"
     | "run-failed"
-    | "notify-failed";
+    | "notify-failed"
+    | "elegantia-flushed"
+    | "elegantia-failed";
   reason?: string;
+  elegantia?: IngestElegantiaStats;
   errorKind?: IngestErrorKind;
 }
 

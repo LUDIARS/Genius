@@ -10,9 +10,13 @@ import type { LoadedGeniusConfig } from "../config/types.js";
 import { openConfiguredDatabase, type GeniusDatabase } from "../db/database.js";
 import { runMigrations } from "../db/migrate.js";
 import { renderDistillPrompt } from "../distill/category-vocabulary.js";
+import type { Classifier } from "../classify/classifier.js";
 import { createClassifier } from "../classify/create-classifier.js";
 import { createDistillLlm } from "../distill/create-distill-llm.js";
 import { DistillationService } from "../distill/distillation-service.js";
+import { ElegantiaClient } from "../elegantia/elegantia-client.js";
+import { ElegantiaOutbox } from "../elegantia/elegantia-outbox.js";
+import { ElegantiaQualityRouter } from "../elegantia/quality-router.js";
 import { LlmPublicCardGate } from "../distill/public-card-gate.js";
 import { CachedEmbeddingClient, EmbeddingCache } from "../embedding/cache.js";
 import { EmbeddingModelRegistry } from "../embedding/model-registry.js";
@@ -128,12 +132,15 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
     const categoryRepository = new CategoryRepository(database);
     const categoryList = categoryRepository.listSync();
     const prompt = renderDistillPrompt(readDistillationPrompt(config), categoryList);
+    // @implements SPEC-GENIUS-ELEGANTIA-ROUTE
+    const elegantiaRoute = createElegantiaRoute(config, database, cardsRepository, classifier);
     const distiller = new DistillationService({
       cardGateway: new SqliteDistillationCardGateway(database, embedder, cards),
       categoryNames: categoryList.map((category) => category.name),
       llm,
       prompt,
       publicCardGate,
+      savedCardSink: elegantiaRoute,
     });
     const questionRepository = new QuestionRepository(database);
     const gapRepository = new GapRepository(database);
@@ -189,6 +196,7 @@ export async function createRuntime(options: CreateRuntimeOptions = {}): Promise
     const ingest = new IngestService({
       completionHook,
       distiller,
+      elegantiaRoute,
       failures: new SqliteIngestFailureStore(database),
       logger: new JsonlIngestLogger(join(dirname(config.configPath), "logs", "ingest.jsonl")),
       notifier: createRunNotifier(config),
@@ -280,6 +288,35 @@ function createQuestionRelay(
     maxPerRun: config.questions.maxPerRun,
     deciderDiscordUserId: config.questions.deciderDiscordUserId,
     queue,
+  });
+}
+
+/**
+ * Elegantia 連携 (spec/feature/elegantia-route.md)。無効は許容するが無言には
+ * しない — 品質基準のカードが Elegantia に届かない状態を起動ログから読めるようにする。
+ */
+function createElegantiaRoute(
+  config: LoadedGeniusConfig,
+  database: GeniusDatabase,
+  cards: CardRepository,
+  classifier: Classifier,
+): ElegantiaQualityRouter | null {
+  if (config.elegantia.baseUrl === null) {
+    process.stderr.write(
+      "[elegantia] antipattern registration is disabled (elegantia.enabled is false)\n",
+    );
+    return null;
+  }
+  return new ElegantiaQualityRouter({
+    cards,
+    outbox: new ElegantiaOutbox(database),
+    classifier,
+    sink: new ElegantiaClient({
+      baseUrl: config.elegantia.baseUrl,
+      timeoutMs: config.elegantia.timeoutMs,
+    }),
+    threshold: config.elegantia.threshold,
+    maxPerRun: config.elegantia.maxPerRun,
   });
 }
 

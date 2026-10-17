@@ -137,6 +137,24 @@ export interface GeniusConfig {
   feedback: FeedbackConfig;
   outcome: OutcomeConfig;
   cardGroupCache: CardGroupCacheConfig;
+  elegantia: ElegantiaConfig;
+}
+
+/**
+ * 品質基準・アンチパターンのカードを Elegantia へ登録する連携
+ * (spec/feature/elegantia-route.md)。
+ */
+export interface ElegantiaConfig {
+  /** Excubitor catalog から解決した送り先 (loopback)。null = 連携無効。 */
+  baseUrl: string | null;
+  /** baseUrl を解決した catalog 断片のパス。連携無効なら null。 */
+  catalogPath: string | null;
+  /** 品質基準/アンチパターンとみなす Noul 確率の下限。 */
+  threshold: number;
+  /** Elegantia への 1 リクエストのタイムアウト (ms)。 */
+  timeoutMs: number;
+  /** 1 回の ingest で処理する outbox 行の上限。 */
+  maxPerRun: number;
 }
 
 /**

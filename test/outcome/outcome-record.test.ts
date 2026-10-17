@@ -52,7 +52,7 @@ describe("migration 011", () => {
       runMigrations(database, MIGRATIONS.filter((migration) => migration.version < 11));
       const cards = new CardRepository(database, { idFactory: () => "old-card" });
       cards.create(input());
-      expect(runMigrations(database)).toEqual([11]);
+      expect(runMigrations(database)).toEqual([11, 12]);
       expect(new CardOutcomeRepository(database).get("old-card")).toBeNull();
     } finally {
       database.close();

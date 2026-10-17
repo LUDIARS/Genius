@@ -5,6 +5,7 @@ export type DistillPurpose =
   | "categorize"
   | "contradiction-check"
   | "seat-classify"
+  | "quality-route"
   | "question-generation"
   | "answer-shaping";
 

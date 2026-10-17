@@ -17,7 +17,11 @@
 export type Disclosure = "public" | "local-only";
 
 /** 判定の用途。`DistillPurpose` の判定系と同じ名前を使う。 */
-export type ClassifyPurpose = "categorize" | "contradiction-check" | "seat-classify";
+export type ClassifyPurpose =
+  | "categorize"
+  | "contradiction-check"
+  | "seat-classify"
+  | "quality-route";
 
 export interface ClassifyRequest {
   purpose: ClassifyPurpose;

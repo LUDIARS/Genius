@@ -164,6 +164,7 @@ LUDIARS 共通規約に従う (SRP・1 ファイル 1 責務・エラー握り�
 | [`spec/feature/clone-db.md`](spec/feature/clone-db.md) | 本体設計 (アーキテクチャ・パイプライン・四象限) |
 | [`spec/feature/operations.md`](spec/feature/operations.md) | 運用化設計 (カテゴリー・公開ゲート・WebUI) |
 | [`spec/feature/judgment-outcome.md`](spec/feature/judgment-outcome.md) | 判断の outcome 記録・「結果は?」配信・席タグと席別一致率 (MUSA S1) |
+| [`spec/feature/elegantia-route.md`](spec/feature/elegantia-route.md) | 品質基準・アンチパターンのカードを Elegantia へ自動登録 (outbox・再送) |
 | [`spec/data/schema.md`](spec/data/schema.md) | DB スキーマ |
 | [`spec/interface/api.md`](spec/interface/api.md) | API / 設定ファイル |
 | [`spec/test/test.md`](spec/test/test.md) | テスト戦略と recall 評価 |

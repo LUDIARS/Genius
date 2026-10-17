@@ -12,6 +12,8 @@ import type {
   IngestRunNotificationFailure,
   IngestRunNotifier,
   IngestRunQuestions,
+  IngestElegantiaRoute,
+  IngestElegantiaStats,
   IngestRunRecord,
   IngestRunStore,
   IngestStateStore,
@@ -83,6 +85,8 @@ export interface IngestServiceDependencies {
   notifier?: IngestRunNotifier | null;
   /** null = 質問生成の配線なし。run 完了後に走る後処理 (Q8)。 */
   completionHook?: IngestCompletionHook | null;
+  /** null = Elegantia 連携なし (config で明示)。run 末尾で outbox を流す。 */
+  elegantiaRoute?: IngestElegantiaRoute | null;
   readers: ReaderResolver;
   runs: IngestRunStore;
   state: IngestStateStore;
@@ -96,6 +100,7 @@ export class IngestService {
   readonly #logger: IngestLogger;
   readonly #notifier: IngestRunNotifier | null;
   readonly #completionHook: IngestCompletionHook | null;
+  readonly #elegantiaRoute: IngestElegantiaRoute | null;
   readonly #readers: ReaderResolver;
   readonly #runs: IngestRunStore;
   readonly #state: IngestStateStore;
@@ -110,6 +115,7 @@ export class IngestService {
     this.#logger = dependencies.logger;
     this.#notifier = dependencies.notifier ?? null;
     this.#completionHook = dependencies.completionHook ?? null;
+    this.#elegantiaRoute = dependencies.elegantiaRoute ?? null;
     this.#readers = dependencies.readers;
     this.#runs = dependencies.runs;
     this.#state = dependencies.state;
@@ -246,7 +252,8 @@ export class IngestService {
         }
       }
       const status = failures.length === 0 ? "completed" : "completed-with-errors";
-      this.#runs.finish(run.id, totals, status, failures.length);
+      const elegantia = await this.#flushElegantia(run.id, options.sources.at(-1) ?? "memory");
+      this.#runs.finish(run.id, totals, status, failures.length, elegantia);
       const finalSource = options.sources.at(-1) ?? "memory";
       await this.#logger.append(logEntry(
         this.#clock,
@@ -469,6 +476,34 @@ export class IngestService {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.#warningSink(`Ingest run ${runId} question generation failed: ${detail}`);
+      return null;
+    }
+  }
+
+  /**
+   * 保存済みカードの Elegantia 登録を流す (spec/feature/elegantia-route.md §5)。
+   * 前回までに失敗して outbox に残った行もここで再試行される。連携の失敗は
+   * ingest の失敗ではないので run の status は覆さず、警告とログに残す。
+   */
+  async #flushElegantia(
+    runId: string,
+    source: SourceName,
+  ): Promise<IngestElegantiaStats | null> {
+    if (this.#elegantiaRoute === null) return null;
+    try {
+      const stats = await this.#elegantiaRoute.flush();
+      await this.#logger.append({
+        ...logEntry(this.#clock, runId, source, emptyTotals(), "elegantia-flushed"),
+        elegantia: stats,
+      });
+      return stats;
+    } catch (error) {
+      const name = error instanceof Error ? error.name : "UnknownError";
+      const detail = `Elegantia outbox flush failed (${name})`;
+      this.#warningSink(`Ingest run ${runId}: ${detail}`);
+      await this.#logger.append(
+        logEntry(this.#clock, runId, source, emptyTotals(), "elegantia-failed", detail),
+      );
       return null;
     }
   }

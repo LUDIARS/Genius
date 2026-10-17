@@ -3,6 +3,7 @@ import { parseReaderCursor, serializeReaderCursor } from "../readers/cursor.js";
 import { sourceNames, type ReaderCursor, type SourceName } from "../readers/source-reader.js";
 import type { GeniusDatabase } from "../db/database.js";
 import type {
+  IngestElegantiaStats,
   IngestRunRecord,
   IngestRunStore,
   IngestStateStore,
@@ -29,6 +30,7 @@ interface RunNotes {
   status: IngestRunRecord["status"];
   error: string | null;
   failedDocuments: number;
+  elegantia: IngestElegantiaStats | null;
 }
 
 const RUN_STATUSES: readonly IngestRunRecord["status"][] = [
@@ -90,6 +92,7 @@ export class SqliteIngestRunStore implements IngestRunStore {
       cardsMerged: 0,
       skipped: 0,
       failedDocuments: 0,
+      elegantia: null,
       startedAt: this.#clock(),
       finishedAt: null,
       error: null,
@@ -101,7 +104,12 @@ export class SqliteIngestRunStore implements IngestRunStore {
            started_at, finished_at, notes
          ) VALUES (?, ?, 0, 0, 0, 0, ?, NULL, ?)`,
       )
-      .run(record.id, sources.join(","), record.startedAt, encodeNotes("running", null, 0));
+      .run(
+        record.id,
+        sources.join(","),
+        record.startedAt,
+        encodeNotes("running", null, 0, null),
+      );
     return record;
   }
 
@@ -122,12 +130,13 @@ export class SqliteIngestRunStore implements IngestRunStore {
     totals: IngestTotals,
     status: "completed" | "completed-with-errors",
     failedDocuments: number,
+    elegantia: IngestElegantiaStats | null = null,
   ): void {
-    this.#updateFinished(id, totals, status, null, failedDocuments);
+    this.#updateFinished(id, totals, status, null, failedDocuments, elegantia);
   }
 
   fail(id: string, totals: IngestTotals, error: Error, failedDocuments: number): void {
-    this.#updateFinished(id, totals, "failed", error.message, failedDocuments);
+    this.#updateFinished(id, totals, "failed", error.message, failedDocuments, null);
   }
 
   get(id: string): IngestRunRecord | null {
@@ -145,6 +154,7 @@ export class SqliteIngestRunStore implements IngestRunStore {
       cardsMerged: row.cards_merged,
       skipped: row.skipped,
       failedDocuments: notes.failedDocuments,
+      elegantia: notes.elegantia,
       startedAt: row.started_at,
       finishedAt: row.finished_at,
       error: notes.error,
@@ -157,6 +167,7 @@ export class SqliteIngestRunStore implements IngestRunStore {
     status: "completed" | "completed-with-errors" | "failed",
     error: string | null,
     failedDocuments: number,
+    elegantia: IngestElegantiaStats | null,
   ): void {
     const result = this.#database
       .prepare(
@@ -171,7 +182,7 @@ export class SqliteIngestRunStore implements IngestRunStore {
         totals.cardsMerged,
         totals.skipped,
         this.#clock(),
-        encodeNotes(status, error, failedDocuments),
+        encodeNotes(status, error, failedDocuments, elegantia),
         id,
       );
     if (result.changes !== 1) throw new Error(`Unknown ingest run: ${id}`);
@@ -182,8 +193,9 @@ function encodeNotes(
   status: RunNotes["status"],
   error: string | null,
   failedDocuments: number,
+  elegantia: IngestElegantiaStats | null,
 ): string {
-  return JSON.stringify({ status, error, failedDocuments } satisfies RunNotes);
+  return JSON.stringify({ status, error, failedDocuments, elegantia } satisfies RunNotes);
 }
 
 function decodeNotes(raw: string | null, runId: string): RunNotes {
@@ -212,7 +224,21 @@ function decodeNotes(raw: string | null, runId: string): RunNotes {
     status: value.status as RunNotes["status"],
     error: value.error,
     failedDocuments: (value.failedDocuments as number | undefined) ?? 0,
+    elegantia: decodeElegantiaStats(value.elegantia, runId),
   };
+}
+
+/** Elegantia 連携導入前の行は elegantia を持たない — null として読む。 */
+function decodeElegantiaStats(raw: unknown, runId: string): IngestElegantiaStats | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isRecord(raw) || !isCount(raw.registered) || !isCount(raw.failed)) {
+    throw new Error(`Ingest run ${runId} has an invalid elegantia field`);
+  }
+  return { registered: raw.registered, failed: raw.failed };
+}
+
+function isCount(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function parseSources(raw: string): SourceName[] {

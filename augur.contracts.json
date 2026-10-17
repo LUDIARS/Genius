@@ -66,6 +66,33 @@
       "module": "src/contracts/followup-message.contract.ts",
       "mode": "observe",
       "sample": 1
+    },
+    {
+      "id": "C-8",
+      "criterion": "C-8 catalogServicePort(catalogText, code): Excubitor catalog 断片から指定 code のサービスの port (1〜65535) を返し、エントリ・port が無い/重複する catalog は ConfigError で落とす",
+      "symbol": "catalogServicePort",
+      "file": "src/elegantia/catalog-port.ts",
+      "module": "src/contracts/catalog-port.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-9",
+      "criterion": "C-9 toElegantiaAntipattern(card): 登録ペイロードの sourceRef は genius:card:<カード id> で、カードの取り込み元 sourceRef (文書の場所) を載せず、augur は null にする",
+      "symbol": "toElegantiaAntipattern",
+      "file": "src/elegantia/antipattern-payload.ts",
+      "module": "src/contracts/antipattern-payload.contract.ts",
+      "mode": "observe",
+      "sample": 1
+    },
+    {
+      "id": "C-10",
+      "criterion": "C-10 qualityRouteEligible(card): public かつ active (supersede・retire されていない) カードだけを Elegantia 判定・送信の対象にし、sensitive カードは対象にしない",
+      "symbol": "qualityRouteEligible",
+      "file": "src/elegantia/quality-route-eligibility.ts",
+      "module": "src/contracts/quality-route-eligibility.contract.ts",
+      "mode": "observe",
+      "sample": 1
     }
   ]
 }

@@ -4,6 +4,7 @@ import type { DistillationCardGateway } from "../../src/distill/distillation-ser
 import { DistillationService } from "../../src/distill/distillation-service.js";
 import type { DistillCompletionRequest, DistillLlm } from "../../src/distill/distill-llm.js";
 import { LlmPublicCardGate } from "../../src/distill/public-card-gate.js";
+import type { SavedCardSink } from "../../src/elegantia/quality-router.js";
 import type { SourceDocument } from "../../src/readers/source-reader.js";
 
 class QueueLlm implements DistillLlm {
@@ -109,6 +110,38 @@ describe("DistillationService", () => {
     expect(mergeRequest?.prompt).toBeTypeOf("string");
     expect(mergeRequest?.prompt).toContain("Choose the path with explicit failure modes");
     expect(mergeRequest?.prompt).not.toContain("Prefer the reversible option");
+  });
+
+  it("hands every saved card (new and merged) to the saved-card sink", async () => {
+    const savedIds: string[] = [];
+    const sink: SavedCardSink = { onCardSaved: (saved) => savedIds.push(saved.id) };
+    const llm = new QueueLlm([
+      JSON.stringify({ cards: [card({ visibility: "sensitive" })] }),
+      JSON.stringify({ cards: [card({ visibility: "sensitive", judgment: "Prefer the reversible option" })] }),
+      JSON.stringify({ merge: true, card: card({ visibility: "sensitive", judgment: "Merged" }) }),
+    ]);
+    const gateway = new FakeCardGateway();
+    const service = createService(gateway, llm, sink);
+
+    await service.distill(document());
+    gateway.duplicate = gateway.cards[0] ?? null;
+    await service.distill(document());
+
+    expect(savedIds).toEqual(["01TEST1", "01TEST2"]);
+    expect(gateway.superseded).toEqual([{ cardId: "01TEST1", replacementId: "01TEST2" }]);
+  });
+
+  it("re-offers an already stored card to the sink so a lost enqueue is recovered", async () => {
+    const savedIds: string[] = [];
+    const sink: SavedCardSink = { onCardSaved: (saved) => savedIds.push(saved.id) };
+    const payload = JSON.stringify({ cards: [card({ visibility: "sensitive" })] });
+    const gateway = new FakeCardGateway();
+    const service = createService(gateway, new QueueLlm([payload, payload]), sink);
+
+    await service.distill(document());
+    await expect(service.distill(document())).resolves.toEqual({ cardsCreated: 0, cardsMerged: 0 });
+
+    expect(savedIds).toEqual(["01TEST1", "01TEST1"]);
   });
 
   it("checks merged public content again before persistence", async () => {
@@ -259,13 +292,18 @@ describe("DistillationService", () => {
 
 const TEST_CATEGORY_NAMES = ["impl-design", "review", "general"] as const;
 
-function createService(gateway: FakeCardGateway, llm: DistillLlm): DistillationService {
+function createService(
+  gateway: FakeCardGateway,
+  llm: DistillLlm,
+  savedCardSink: SavedCardSink | null = null,
+): DistillationService {
   return new DistillationService({
     cardGateway: gateway,
     categoryNames: [...TEST_CATEGORY_NAMES],
     llm,
     prompt: "extract",
     publicCardGate: new LlmPublicCardGate(llm),
+    savedCardSink,
   });
 }
 
